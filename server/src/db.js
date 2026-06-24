@@ -8,6 +8,7 @@ const pool = new pg.Pool({
   database: process.env.PGDATABASE || "kims_dashboard",
   user: process.env.PGUSER || "postgres",
   password: process.env.PGPASSWORD || "postgres",
+  ssl: process.env.PGHOST !== "localhost" ? { rejectUnauthorized: false } : false,
 });
 
 pool.on("error", (err) => {
