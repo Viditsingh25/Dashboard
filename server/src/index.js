@@ -13,7 +13,11 @@ import kpiRoutes from "./routes/kpis.js";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || ["http://localhost:3000", "http://localhost:5173"], credentials: true }));
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim())
+  : ["http://localhost:3000", "http://localhost:5173"];
+
+app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 
 // Routes
