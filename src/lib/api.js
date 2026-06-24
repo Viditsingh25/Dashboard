@@ -1,4 +1,4 @@
-const API_BASE = "/api";
+const API_BASE = "https://dashboard-j8t3.onrender.com/api";
 
 function getToken() {
   return localStorage.getItem("kims-dashboard-token");
