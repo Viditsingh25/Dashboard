@@ -196,16 +196,6 @@ export default function Operations() {
         </div>
       )}
 
-      {/* INSURANCE */}
-      {activeTab === "insurance" && (
-        <div className="grid md:grid-cols-4 gap-5">
-          <Card title="Total Claims" value={getVal("total-claims", "₹18 Cr")} icon="📑" />
-          <Card title="Approved" value={getVal("approved-claims", "₹15 Cr")} icon="✅" />
-          <Card title="Pending" value={getVal("pending-claims", "₹2 Cr")} icon="⏳" />
-          <Card title="Rejected" value={getVal("rejected-claims", "₹1 Cr")} icon="❌" />
-        </div>
-      )}
-
       {/* DEPARTMENT */}
       {activeTab === "department" && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
