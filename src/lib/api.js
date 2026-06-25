@@ -31,21 +31,6 @@ async function request(method, path, body) {
 }
 
 // Auth
-<<<<<<< Updated upstream
-=======
-function setOtpToken(token) {
-  if (token) {
-    localStorage.setItem("kims-dashboard-otp-token", token);
-  } else {
-    localStorage.removeItem("kims-dashboard-otp-token");
-  }
-}
-
-function getOtpToken() {
-  return localStorage.getItem("kims-dashboard-otp-token");
-}
-
->>>>>>> Stashed changes
 export async function login(username, password, site) {
   const data = await request("POST", "/auth/login", { username, password, site });
   if (data.token) setToken(data.token);
