@@ -56,7 +56,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
   const [rolePage, setRolePage] = useState(1);
   const [userPage, setUserPage] = useState(1);
   const [expandedRoles, setExpandedRoles] = useState({});
-  const ITEMS_PER_PAGE = 5;
+  const ITEMS_PER_PAGE = 50;
 
   useEffect(() => {
     (async () => {
