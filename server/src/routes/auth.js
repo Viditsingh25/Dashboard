@@ -1,11 +1,20 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import pool from "../db.js";
 import { authenticate, createToken } from "../middleware/auth.js";
 import { getPolicies, validatePassword, checkPasswordHistory, storePasswordHistory } from "../utils/password.js";
 import { logEvent } from "../utils/logger.js";
+import { sendOtpEmail, isEmailConfigured } from "../utils/email.js";
 
 const router = Router();
+
+const JWT_SECRET = process.env.JWT_SECRET || "kims-dashboard-jwt-secret-change-in-production";
+
+function generateOtp(length = 6) {
+  return Array.from({ length }, () => crypto.randomInt(0, 10)).join("");
+}
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
@@ -136,6 +145,44 @@ router.post("/login", async (req, res) => {
     });
   }
 
+    // If user has email and email is configured, require OTP before full login
+    if (user.email && isEmailConfigured()) {
+      const code = generateOtp();
+      await pool.query(
+        "INSERT INTO login_otps (user_id, code, expires_at) VALUES ($1, $2, NOW() + INTERVAL '10 minutes')",
+        [user.id, code]
+      );
+      await sendOtpEmail(user.email, code);
+      logEvent("info", `OTP sent to user "${user.username}" at ${user.email}`, req, user);
+
+      const otpToken = jwt.sign(
+        { id: user.id, username: user.username, role: user.role_name, site: site || allowed[0], scope: "otp" },
+        JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+
+      return res.json({
+        otpRequired: true,
+        otpToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role_name,
+          roleLabel: user.role_label,
+          site: site || allowed[0],
+          email: user.email,
+          phone: user.phone,
+          empId: user.emp_id,
+          allowedSites: allowed,
+          landingPath: user.landing_path,
+          allowedPaths: user.allowed_paths,
+          avatarUrl: user.avatar_url,
+          privacyAcceptedAt: user.privacy_accepted_at,
+        },
+      });
+    }
+
     const token = createToken(user);
 
     res.json({
@@ -159,6 +206,77 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/auth/verify-otp
+router.post("/verify-otp", async (req, res) => {
+  const { otpToken, code } = req.body;
+
+  if (!otpToken || !code) {
+    return res.status(400).json({ error: "OTP token and code are required" });
+  }
+
+  try {
+    let payload;
+    try {
+      payload = jwt.verify(otpToken, JWT_SECRET);
+    } catch {
+      return res.status(401).json({ error: "OTP session expired. Please login again." });
+    }
+
+    if (payload.scope !== "otp") {
+      return res.status(401).json({ error: "Invalid token scope" });
+    }
+
+    const result = await pool.query(
+      `SELECT l.*, u.username, u.name, u.role_id, u.email, u.phone, u.emp_id,
+              u.allowed_sites, u.avatar_url, u.privacy_accepted_at,
+              r.name AS role_name, r.label AS role_label,
+              r.landing_path, r.allowed_paths
+       FROM login_otps l
+       JOIN users u ON u.id = l.user_id
+       JOIN roles r ON r.id = u.role_id
+       WHERE l.user_id = $1 AND l.code = $2 AND l.used = false AND l.expires_at > NOW()
+       ORDER BY l.created_at DESC LIMIT 1`,
+      [payload.id, code]
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      logEvent("warning", `Invalid/expired OTP attempt for user "${payload.username}"`, req);
+      return res.status(401).json({ error: "Invalid or expired OTP code" });
+    }
+
+    await pool.query("UPDATE login_otps SET used = true WHERE id = $1", [row.id]);
+
+    logEvent("info", `User "${row.username}" verified OTP and logged in`, req, row);
+
+    const token = createToken(row);
+    const allowed = row.allowed_sites || [];
+
+    res.json({
+      token,
+      user: {
+        id: row.id,
+        username: row.username,
+        name: row.name,
+        role: row.role_name,
+        roleLabel: row.role_label,
+        site: payload.site || allowed[0],
+        email: row.email,
+        phone: row.phone,
+        empId: row.emp_id,
+        allowedSites: allowed,
+        landingPath: row.landing_path,
+        allowedPaths: row.allowed_paths,
+        avatarUrl: row.avatar_url,
+        privacyAcceptedAt: row.privacy_accepted_at,
+      },
+    });
+  } catch (err) {
+    console.error("Verify OTP error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
