@@ -56,7 +56,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
   const [rolePage, setRolePage] = useState(1);
   const [userPage, setUserPage] = useState(1);
   const [expandedRoles, setExpandedRoles] = useState({});
-  const ITEMS_PER_PAGE = 50;
+  const ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
     (async () => {
@@ -1838,14 +1838,7 @@ function ProfileSettings({ currentUser, setCurrentUser }) {
 }
 
 function Pagination({ page, total, perPage, onChange }) {
-  const totalPages = Math.ceil(total / perPage);
-  if (totalPages <= 1) {
-    return (
-      <div className="flex items-center justify-center gap-2 pt-4 text-xs text-gray-400">
-        <span>{total} item{total !== 1 ? "s" : ""}</span>
-      </div>
-    );
-  }
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
   const maxVisible = 5;
   let start = Math.max(1, page - Math.floor(maxVisible / 2));
   let end = Math.min(totalPages, start + maxVisible - 1);
