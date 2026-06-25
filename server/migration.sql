@@ -106,15 +106,3 @@ CREATE TABLE IF NOT EXISTS system_logs (
 
 CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
-
--- Email OTP for login
-CREATE TABLE IF NOT EXISTS login_otps (
-  id         SERIAL PRIMARY KEY,
-  user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  code       VARCHAR(6) NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-  used       BOOLEAN DEFAULT false,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_login_otps_user ON login_otps(user_id, used);

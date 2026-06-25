@@ -31,7 +31,9 @@ async function request(method, path, body) {
 }
 
 // Auth
-export function setOtpToken(token) {
+<<<<<<< Updated upstream
+=======
+function setOtpToken(token) {
   if (token) {
     localStorage.setItem("kims-dashboard-otp-token", token);
   } else {
@@ -39,32 +41,16 @@ export function setOtpToken(token) {
   }
 }
 
-export function getOtpToken() {
+function getOtpToken() {
   return localStorage.getItem("kims-dashboard-otp-token");
 }
 
+>>>>>>> Stashed changes
 export async function login(username, password, site) {
   const data = await request("POST", "/auth/login", { username, password, site });
-  if (data.token) {
-    setToken(data.token);
-  }
-  if (data.otpRequired) {
-    setOtpToken(data.otpToken);
-    return { ...data.user, _otpRequired: true };
-  }
+  if (data.token) setToken(data.token);
   if (data.passwordExpired) {
     return { ...data.user, _passwordExpired: true, _expiredMessage: data.message };
-  }
-  return data.user;
-}
-
-export async function verifyOtp(code) {
-  const otpToken = getOtpToken();
-  if (!otpToken) throw new Error("No OTP session found. Please login again.");
-  const data = await request("POST", "/auth/verify-otp", { otpToken, code });
-  if (data.token) {
-    setToken(data.token);
-    setOtpToken(null);
   }
   return data.user;
 }
@@ -233,5 +219,5 @@ export async function fetchLogs({ page = 1, limit = 50, level, search } = {}) {
   return data;
 }
 
-// Token helpers
-export { getToken, setToken, getOtpToken, setOtpToken };
+// Token helper (used by App.jsx to check if logged in)
+export { getToken, setToken };

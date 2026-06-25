@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Building2, Eye, EyeOff, Lock, ShieldCheck, User, KeyRound, Mail, ArrowLeft } from "lucide-react";
+import { Building2, Eye, EyeOff, Lock, ShieldCheck, User, KeyRound } from "lucide-react";
 import kimsLogo from "../assets/kims-login-logo.png";
 import founderCard from "../assets/login-founder-card.png";
 
 import { sites } from "../utils/authConfig";
-import { login, changePassword, verifyOtp } from "../lib/api";
+import { login, changePassword } from "../lib/api";
 
 export default function Login({ onLogin }) {
   const [site, setSite] = useState(sites[0]);
@@ -16,9 +16,6 @@ export default function Login({ onLogin }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [forceShowPw, setForceShowPw] = useState(false);
-  const [otpRequired, setOtpRequired] = useState(false);
-  const [otpCode, setOtpCode] = useState("");
-  const [otpEmail, setOtpEmail] = useState("");
 
   const submitLogin = async (event) => {
     event.preventDefault();
@@ -26,30 +23,10 @@ export default function Login({ onLogin }) {
 
     try {
       const user = await login(username.trim(), password, site);
-      if (user._otpRequired) {
-        setOtpEmail(user.email || "");
-        setOtpRequired(true);
-        return;
-      }
       if (user._passwordExpired) {
         setExpiredUser(user);
         return;
       }
-      onLogin(user);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const handleOtpSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    if (otpCode.length < 4) {
-      setError("Please enter the OTP code sent to your email.");
-      return;
-    }
-    try {
-      const user = await verifyOtp(otpCode);
       onLogin(user);
     } catch (err) {
       setError(err.message);
@@ -75,62 +52,6 @@ export default function Login({ onLogin }) {
       setError(err.message);
     }
   };
-
-  if (otpRequired) {
-    return (
-      <main className="relative h-screen overflow-hidden bg-[#f7fbf8] px-5 py-3 text-gray-900">
-        <div className="pointer-events-none absolute -left-36 bottom-0 h-[460px] w-[660px] rounded-[50%] bg-green-100/70" />
-        <div className="pointer-events-none absolute right-0 top-0 h-40 w-40 opacity-40 [background-image:radial-gradient(#90d6ae_2px,transparent_2px)] [background-size:14px_14px]" />
-        <div className="relative mx-auto flex h-[calc(100vh-24px)] w-full max-w-[500px] flex-col items-center justify-center">
-          <div className="mb-4 w-full max-w-[470px] rounded-[22px] bg-[#062b1c] px-7 py-4 shadow-[0_28px_70px_-38px_rgba(6,43,28,0.85)]">
-            <img src={kimsLogo} alt="KIMS" className="mx-auto h-auto w-full object-contain" />
-          </div>
-          <div className="w-full rounded-[22px] border border-green-100/80 bg-white/95 p-8 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.42)]">
-            <div className="mb-2 flex items-center justify-center gap-4 text-green-800">
-              <span className="h-px w-16 bg-green-700/45" />
-              <span className="grid h-10 w-10 place-items-center rounded-full border-2 border-green-700">
-                <Mail size={20} strokeWidth={1.5} />
-              </span>
-              <span className="h-px w-16 bg-green-700/45" />
-            </div>
-            <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">Verify OTP</h2>
-            <p className="mb-1 text-center text-sm text-gray-600">
-              A one-time code has been sent to
-            </p>
-            <p className="mb-6 text-center text-sm font-semibold text-green-800">{otpEmail}</p>
-            <form onSubmit={handleOtpSubmit} className="space-y-4">
-              <div>
-                <p className="mb-2 text-sm font-medium text-gray-600">OTP Code</p>
-                <input
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  className="h-13 w-full rounded-xl border border-green-200 bg-white pl-4 pr-4 text-center text-2xl tracking-[8px] text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-green-500 focus:ring-2 focus:ring-green-100"
-                  placeholder="000000"
-                  autoFocus
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                />
-              </div>
-              {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{error}</p>}
-              <button
-                type="submit"
-                className="flex h-13 w-full items-center justify-center rounded-xl bg-green-800 px-4 text-base font-bold tracking-wide text-white shadow-lg shadow-green-900/15 transition hover:bg-green-900"
-              >
-                Verify & Login
-              </button>
-              <button
-                type="button"
-                onClick={() => { setOtpRequired(false); setOtpCode(""); setError(""); }}
-                className="flex w-full items-center justify-center gap-2 text-sm text-gray-500 hover:text-green-700 transition"
-              >
-                <ArrowLeft size={16} strokeWidth={1.5} /> Back to login
-              </button>
-            </form>
-          </div>
-        </div>
-      </main>
-    );
-  }
 
   if (expiredUser) {
     return (
