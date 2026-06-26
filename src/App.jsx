@@ -103,15 +103,19 @@ function App() {
       const landingPath = updatedUser.landingPath || "/";
       window.history.replaceState(null, "", landingPath);
       setCurrentUser(updatedUser);
-      setRoles((prev) => ({
-        ...prev,
-        [user.role]: {
-          label: user.roleLabel,
-          landingPath: user.landingPath,
-          allowedPaths: user.allowedPaths,
-          active: true,
-        },
-      }));
+      const userRoles = user.roles || [user.role];
+      setRoles((prev) => {
+        const next = { ...prev };
+        for (const rn of userRoles) {
+          next[rn] = {
+            label: rn === user.role ? user.roleLabel : rn,
+            landingPath: user.landingPath,
+            allowedPaths: user.allowedPaths,
+            active: true,
+          };
+        }
+        return next;
+      });
       loadUsers();
       loadRoles();
       loadModules();
@@ -130,15 +134,19 @@ function App() {
     const landingPath = user.landingPath || "/";
     window.history.replaceState(null, "", landingPath);
     setCurrentUser(user);
-    setRoles((prev) => ({
-      ...prev,
-      [user.role]: {
-        label: user.roleLabel,
-        landingPath: user.landingPath,
-        allowedPaths: user.allowedPaths,
-        active: true,
-      },
-    }));
+    const userRoles = user.roles || [user.role];
+    setRoles((prev) => {
+      const next = { ...prev };
+      for (const rn of userRoles) {
+        next[rn] = {
+          label: rn === user.role ? user.roleLabel : rn,
+          landingPath: user.landingPath,
+          allowedPaths: user.allowedPaths,
+          active: true,
+        };
+      }
+      return next;
+    });
     setPendingSiteSelection(null);
     loadUsers();
     loadRoles();

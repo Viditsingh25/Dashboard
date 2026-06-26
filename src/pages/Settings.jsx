@@ -18,8 +18,9 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
-  const canManageAccess = currentUser?.role === "admin" || currentUser?.role === "superadmin";
-  const isSuperAdmin = currentUser?.role === "superadmin";
+  const currentUserRoles = (currentUser?.roles) || [currentUser?.role];
+  const canManageAccess = currentUserRoles.some(r => r === "admin" || r === "superadmin");
+  const isSuperAdmin = currentUserRoles.includes("superadmin");
   const editableRoleEntries = Object.entries(roles).filter(([roleKey]) => isSuperAdmin || roleKey !== "superadmin");
   const [message, setMessage] = useState("");
   const [roleForm, setRoleForm] = useState({
@@ -35,7 +36,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     empId: "",
     username: "",
     password: "",
-    role: editableRoleEntries[0]?.[0] || "revenue",
+    roles: [editableRoleEntries[0]?.[0] || "revenue"],
     allowedSites: [sites[0]],
   });
   const [editingRole, setEditingRole] = useState("");
@@ -179,10 +180,10 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
         email: userForm.email.trim(),
         phone: userForm.phone.trim(),
         empId: userForm.empId.trim(),
-        role: userForm.role,
+        roles: userForm.roles,
         allowedSites: userForm.allowedSites,
       });
-      setUsers((prev) => [...prev, { ...newUser, role: userForm.role, role_name: userForm.role }]);
+      setUsers((prev) => [...prev, { ...newUser, roles: newUser.roles || userForm.roles.map(r => ({ name: r, label: "" })), role: userForm.roles[0] || "" }]);
       setUserForm({
         name: "",
         email: "",
@@ -190,7 +191,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
         empId: "",
         username: "",
         password: "",
-        role: editableRoleEntries[0]?.[0] || "revenue",
+        roles: [editableRoleEntries[0]?.[0] || "revenue"],
         allowedSites: [sites[0]],
       });
       setMessage("User created.");
@@ -276,11 +277,11 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     const role = roles[roleKey];
     if (!role?.id) return;
 
-    if (roleKey === "superadmin" || roleKey === currentUser?.role) {
+    if (roleKey === "superadmin" || currentUserRoles.includes(roleKey)) {
       setMessage("This role cannot be deleted while it is protected or in use by you.");
       return;
     }
-    if (users.some((user) => user.role === roleKey)) {
+    if (users.some((user) => (user.roles || []).some(r => (typeof r === "object" ? r.name : r) === roleKey))) {
       setMessage("Assign users to another role before deleting this role.");
       return;
     }
@@ -325,7 +326,13 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     }
 
     try {
-      await apiUpdateUser(user.id, { [field === "name" ? "name" : field === "email" ? "email" : field === "phone" ? "phone" : field === "empId" ? "empId" : field === "role" ? "role" : field === "active" ? "active" : "name"]: value });
+      const fieldMap = {
+        name: "name", email: "email", phone: "phone",
+        empId: "empId", role: "role", roles: "roles",
+        active: "active",
+      };
+      const apiField = fieldMap[field] || "name";
+      await apiUpdateUser(user.id, { [apiField]: value });
       setUsers((prev) => prev.map((u) => (u.username === username ? { ...u, [field]: value } : u)));
     } catch (err) {
       toast().error(err.message);
@@ -335,7 +342,8 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
   const deleteUser = (username) => {
     const targetUser = users.find((user) => user.username === username);
     if (!targetUser) return;
-    if (username === currentUser?.username || targetUser.role === "superadmin") {
+    const targetRoles = (targetUser.roles || []).map(r => typeof r === "object" ? r.name : r);
+    if (username === currentUser?.username || targetRoles.includes("superadmin")) {
       setMessage("This user cannot be deleted while protected or logged in.");
       return;
     }
@@ -464,18 +472,28 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
                     <Input label="EMP ID" value={userForm.empId} onChange={(value) => setUserForm({ ...userForm, empId: value })} />
                     <Input label="Username" value={userForm.username} onChange={(value) => setUserForm({ ...userForm, username: value })} />
                     <Input label="Password" value={userForm.password} onChange={(value) => setUserForm({ ...userForm, password: value })} />
-                    <label className="block">
-                      <span className="text-sm font-medium text-gray-600">Role</span>
-                      <select
-                        value={userForm.role}
-                        onChange={(event) => setUserForm({ ...userForm, role: event.target.value })}
-                        className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                      >
+                    <div className="block md:col-span-2">
+                      <span className="text-sm font-medium text-gray-600">Roles</span>
+                      <div className="mt-2 flex flex-wrap gap-2">
                         {editableRoleEntries.map(([roleKey, role]) => (
-                          <option key={roleKey} value={roleKey}>{role.label}</option>
+                          <label key={roleKey} className="flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm cursor-pointer hover:bg-gray-100">
+                            <input
+                              type="checkbox"
+                              checked={userForm.roles.includes(roleKey)}
+                              onChange={() => {
+                                setUserForm((prev) => ({
+                                  ...prev,
+                                  roles: prev.roles.includes(roleKey)
+                                    ? prev.roles.filter(r => r !== roleKey)
+                                    : [...prev.roles, roleKey],
+                                }));
+                              }}
+                            />
+                            {role.label}
+                          </label>
                         ))}
-                      </select>
-                    </label>
+                      </div>
+                    </div>
                   </div>
                   <SiteCheckboxes selectedSites={userForm.allowedSites} onToggle={toggleUserFormSite} />
                   <button className="mt-5 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
@@ -636,7 +654,8 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
                   {filteredUsers.length === 0 ? (
                     <tr><td colSpan={9} className="px-4 py-12 text-center text-gray-400">No users match your search</td></tr>
                   ) : filteredUsers.slice((userPage - 1) * ITEMS_PER_PAGE, userPage * ITEMS_PER_PAGE).map((user) => {
-                    const lockedSuperAdmin = user.role === "superadmin" && !isSuperAdmin;
+                    const userRoleNames = (user.roles || []).map(r => typeof r === "object" ? r.name : r);
+                    const lockedSuperAdmin = userRoleNames.includes("superadmin") && !isSuperAdmin;
                     const isEditing = editingUser === user.username;
                     return (
                       <tr key={user.username} className="border-b hover:bg-gray-50">
@@ -682,17 +701,40 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
                         </td>
                         <td className="px-4 py-4">{user.username}</td>
                         <td className="px-4 py-4">
-                          <select
-                            value={user.role}
-                            disabled={!canManageAccess || lockedSuperAdmin || !isEditing}
-                            onChange={(event) => updateUser(user.username, "role", event.target.value)}
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                          >
-                            {editableRoleEntries.map(([roleKey, role]) => (
-                              <option key={roleKey} value={roleKey}>{role.label}</option>
-                            ))}
-                            {user.role === "superadmin" && <option value="superadmin">Super Admin</option>}
-                          </select>
+                          {isEditing ? (
+                            <div className="flex flex-col gap-1 min-w-[140px]">
+                              {editableRoleEntries.map(([roleKey, role]) => {
+                                const checked = user.roles?.some(r => (typeof r === "object" ? r.name === roleKey : r === roleKey));
+                                return (
+                                  <label key={roleKey} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      disabled={lockedSuperAdmin}
+                                      checked={checked}
+                                      onChange={() => {
+                                        const currentRoles = user.roles?.map(r => typeof r === "object" ? r.name : r) || [];
+                                        const newRoles = checked
+                                          ? currentRoles.filter(r => r !== roleKey)
+                                          : [...currentRoles, roleKey];
+                                        updateUser(user.username, "roles", newRoles);
+                                      }}
+                                    />
+                                    {role.label}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {(user.roles || []).map((r) => {
+                                const name = typeof r === "object" ? r.name : r;
+                                const label = typeof r === "object" ? r.label : (roles[name]?.label || name);
+                                return (
+                                  <span key={name} className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{label}</span>
+                                );
+                              })}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap gap-2">

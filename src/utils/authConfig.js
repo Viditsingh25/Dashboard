@@ -47,6 +47,7 @@ export const defaultUsers = [
     username: "revenue",
     password: "rev@123",
     role: "revenue",
+    roles: ["revenue"],
     name: "Revenue User",
     allowedSites: ["PBMH"],
     active: true,
@@ -55,6 +56,7 @@ export const defaultUsers = [
     username: "ceo",
     password: "ceo@123",
     role: "ceo",
+    roles: ["ceo"],
     name: "CEO User",
     allowedSites: ["PBMH", "KSSCC"],
     active: true,
@@ -63,6 +65,7 @@ export const defaultUsers = [
     username: "admin",
     password: "admin@123",
     role: "admin",
+    roles: ["admin"],
     name: "Admin User",
     allowedSites: ["PBMH", "KSSCC"],
     active: true,
@@ -71,6 +74,7 @@ export const defaultUsers = [
     username: "superadmin",
     password: "super@123",
     role: "superadmin",
+    roles: ["superadmin"],
     name: "Super Admin",
     allowedSites: ["PBMH", "KSSCC"],
     active: true,
@@ -78,35 +82,43 @@ export const defaultUsers = [
 ];
 
 export function canAccessPath(user, path, roles = defaultRoleConfig) {
-  const role = roles[user?.role];
-  if (!role || role.active === false || user?.active === false) return false;
-  const permissions = role.allowedPaths || [];
-  if (permissions.includes("*")) return true;
-  if (permissions.includes(path)) return true;
-  // Check if user has any sub-tab permission under this module path
-  if (permissions.some((p) => p.startsWith(path + "/tab/"))) return true;
+  if (user?.active === false) return false;
+  const userRoles = user?.roles || [user?.role];
+  for (const roleName of userRoles) {
+    const role = roles[roleName];
+    if (!role || role.active === false) continue;
+    const permissions = role.allowedPaths || [];
+    if (permissions.includes("*")) return true;
+    if (permissions.includes(path)) return true;
+    if (permissions.some((p) => p.startsWith(path + "/tab/"))) return true;
+  }
   return false;
 }
 
 export function canAccessTab(user, modulePath, tabKey, roles = defaultRoleConfig) {
-  const role = roles[user?.role];
-  if (!role || role.active === false || user?.active === false) return false;
-  const permissions = role.allowedPaths || [];
-  if (permissions.includes("*")) return true;
+  if (user?.active === false) return false;
+  const userRoles = user?.roles || [user?.role];
+  for (const roleName of userRoles) {
+    const role = roles[roleName];
+    if (!role || role.active === false) continue;
+    const permissions = role.allowedPaths || [];
+    if (permissions.includes("*")) return true;
 
-  const tabPrefix = modulePath + "/tab/";
-  const hasExplicitTabPermissions = permissions.some((p) => p.startsWith(tabPrefix));
+    const tabPrefix = modulePath + "/tab/";
+    const hasExplicitTabPermissions = permissions.some((p) => p.startsWith(tabPrefix));
 
-  if (hasExplicitTabPermissions) {
-    // Explicit tab permissions exist, check specific tab
-    return permissions.includes(tabPrefix + tabKey);
+    if (hasExplicitTabPermissions) {
+      if (permissions.includes(tabPrefix + tabKey)) return true;
+    } else if (permissions.includes(modulePath)) return true;
   }
-
-  // No explicit tab permissions, check module-level access (grants all tabs)
-  if (permissions.includes(modulePath)) return true;
   return false;
 }
 
 export function getLandingPath(user, roles = defaultRoleConfig) {
-  return roles[user?.role]?.landingPath || "/";
+  const userRoles = user?.roles || [user?.role];
+  for (const roleName of userRoles) {
+    const path = roles[roleName]?.landingPath;
+    if (path) return path;
+  }
+  return "/";
 }

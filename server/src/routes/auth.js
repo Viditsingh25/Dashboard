@@ -1,11 +1,36 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import pool from "../db.js";
-import { authenticate, createToken } from "../middleware/auth.js";
+import { authenticate, createToken, getUserRoles, mergeRolePermissions } from "../middleware/auth.js";
 import { getPolicies, validatePassword, checkPasswordHistory, storePasswordHistory } from "../utils/password.js";
 import { logEvent } from "../utils/logger.js";
 
 const router = Router();
+
+async function buildUserResponse(userRow, rolesData, site) {
+  const allowed = userRow.allowed_sites || [];
+  const roleNames = rolesData.map(r => r.name);
+  const roleLabels = rolesData.map(r => r.label);
+  const merged = mergeRolePermissions(rolesData);
+  const isSuper = roleNames.includes("superadmin");
+  return {
+    id: userRow.id,
+    username: userRow.username,
+    name: userRow.name,
+    roles: roleNames,
+    role: roleNames[0] || "",
+    roleLabel: roleLabels[0] || "",
+    site: site || allowed[0] || "",
+    email: userRow.email,
+    phone: userRow.phone,
+    empId: userRow.emp_id,
+    allowedSites: allowed,
+    landingPath: merged.landingPath,
+    allowedPaths: merged.allowedPaths,
+    avatarUrl: userRow.avatar_url,
+    privacyAcceptedAt: userRow.privacy_accepted_at,
+  };
+}
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {
@@ -17,14 +42,9 @@ router.post("/login", async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT u.*, r.name AS role_name, r.label AS role_label,
-              r.landing_path, r.allowed_paths, r.active AS role_active
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       WHERE u.username = $1`,
+      `SELECT u.* FROM users u WHERE LOWER(u.username) = LOWER($1)`,
       [username.trim()]
     );
-
     const user = result.rows[0];
 
     if (!user) {
@@ -36,9 +56,13 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "This user is inactive" });
     }
 
-    if (!user.role_active) {
-      return res.status(401).json({ error: "This user's role is inactive" });
+    const rolesData = await getUserRoles(user.id);
+    if (rolesData.length === 0) {
+      return res.status(401).json({ error: "This user has no active roles assigned" });
     }
+
+    const roleNames = rolesData.map(r => r.name);
+    const isSuper = roleNames.includes("superadmin");
 
     const allowed = user.allowed_sites || [];
     if (site && !allowed.includes(site)) {
@@ -47,8 +71,8 @@ router.post("/login", async (req, res) => {
 
     const policies = await getPolicies();
 
-    // Lockout check (skip for superadmin)
-    if (user.role_name !== "superadmin" && user.locked_until && new Date(user.locked_until) > new Date()) {
+    // Lockout check (skip superadmin)
+    if (!isSuper && user.locked_until && new Date(user.locked_until) > new Date()) {
       const mins = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
       return res.status(423).json({ error: `Account locked. Try again in ${mins} minute(s).` });
     }
@@ -56,8 +80,7 @@ router.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password_hash);
 
     if (!match) {
-      // Track failed attempts (skip for superadmin)
-      if (user.role_name !== "superadmin") {
+      if (!isSuper) {
         const newFailed = (user.failed_attempts || 0) + 1;
         if (newFailed >= policies.max_failed_attempts) {
           const lockedUntil = new Date(Date.now() + policies.lockout_minutes * 60000);
@@ -78,85 +101,28 @@ router.post("/login", async (req, res) => {
 
     logEvent("info", `User "${user.username}" logged in from site "${site || allowed[0]}"`, req, user);
 
-    // Check password expiry (skip for superadmin)
-    if (user.role_name !== "superadmin" && policies.expiry_days > 0) {
+    // Password expiry (skip superadmin)
+    if (!isSuper && policies.expiry_days > 0) {
       const lastChanged = user.password_changed_at || user.created_at;
       const expiryDate = new Date(lastChanged);
       expiryDate.setDate(expiryDate.getDate() + policies.expiry_days);
       if (new Date() > expiryDate) {
-        const tempToken = createToken({ ...user, site: site || allowed[0] });
-        return res.status(200).json({
-          token: tempToken,
-          passwordExpired: true,
-          message: "Your password has expired. Please change it.",
-          user: {
-            id: user.id,
-            username: user.username,
-            name: user.name,
-            role: user.role_name,
-            roleLabel: user.role_label,
-            site: site || allowed[0],
-            email: user.email,
-            phone: user.phone,
-            empId: user.emp_id,
-            allowedSites: allowed,
-            landingPath: user.landing_path,
-            allowedPaths: user.allowed_paths,
-            forcePasswordChange: true,
-            avatarUrl: user.avatar_url,
-            privacyAcceptedAt: user.privacy_accepted_at,
-          },
-        });
+        const userResp = await buildUserResponse(user, rolesData, site || allowed[0]);
+        const tempToken = createToken({ ...userResp, roles: roleNames, role_name: roleNames[0], site: site || allowed[0] });
+        return res.json({ token: tempToken, passwordExpired: true, message: "Your password has expired. Please change it.", user: { ...userResp, forcePasswordChange: true } });
       }
     }
 
     if (user.force_password_change) {
-      const tempToken = createToken({ ...user, site: site || allowed[0] });
-      return res.status(200).json({
-        token: tempToken,
-        passwordExpired: true,
-        message: "Please change your password before continuing.",
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role_name,
-        roleLabel: user.role_label,
-        site: site || allowed[0],
-        email: user.email,
-        phone: user.phone,
-        empId: user.emp_id,
-        allowedSites: allowed,
-        landingPath: user.landing_path,
-        allowedPaths: user.allowed_paths,
-        forcePasswordChange: true,
-        avatarUrl: user.avatar_url,
-        privacyAcceptedAt: user.privacy_accepted_at,
-      },
-    });
-  }
+      const userResp = await buildUserResponse(user, rolesData, site || allowed[0]);
+      const tempToken = createToken({ ...userResp, roles: roleNames, role_name: roleNames[0], site: site || allowed[0] });
+      return res.json({ token: tempToken, passwordExpired: true, message: "Please change your password before continuing.", user: { ...userResp, forcePasswordChange: true } });
+    }
 
-    const token = createToken(user);
+    const userResp = await buildUserResponse(user, rolesData, site || allowed[0]);
+    const token = createToken({ ...userResp, roles: roleNames, role_name: roleNames[0], site: site || allowed[0] });
 
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role_name,
-        roleLabel: user.role_label,
-        site: site || allowed[0],
-        email: user.email,
-        phone: user.phone,
-        empId: user.emp_id,
-        allowedSites: allowed,
-        landingPath: user.landing_path,
-        allowedPaths: user.allowed_paths,
-        avatarUrl: user.avatar_url,
-        privacyAcceptedAt: user.privacy_accepted_at,
-      },
-    });
+    res.json({ token, user: userResp });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -169,39 +135,23 @@ router.get("/me", authenticate, async (req, res) => {
     const result = await pool.query(
       `SELECT u.id, u.username, u.name, u.email, u.phone, u.emp_id,
               u.allowed_sites, u.active, u.force_password_change,
-              u.avatar_url, u.privacy_accepted_at,
-              r.name AS role_name, r.label AS role_label,
-              r.landing_path, r.allowed_paths, r.active AS role_active
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       WHERE u.id = $1`,
+              u.avatar_url, u.privacy_accepted_at
+       FROM users u WHERE u.id = $1`,
       [req.user.id]
     );
 
     const user = result.rows[0];
-    if (!user || !user.active || !user.role_active) {
-      return res.status(401).json({ error: "User or role is no longer active" });
+    if (!user || !user.active) {
+      return res.status(401).json({ error: "User is no longer active" });
     }
 
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role_name,
-        roleLabel: user.role_label,
-        site: req.user.site,
-        email: user.email,
-        phone: user.phone,
-        empId: user.emp_id,
-        allowedSites: user.allowed_sites,
-        landingPath: user.landing_path,
-        allowedPaths: user.allowed_paths,
-        forcePasswordChange: user.force_password_change,
-        avatarUrl: user.avatar_url,
-        privacyAcceptedAt: user.privacy_accepted_at,
-      },
-    });
+    const rolesData = await getUserRoles(user.id);
+    if (rolesData.length === 0) {
+      return res.status(401).json({ error: "User has no active roles" });
+    }
+
+    const userResp = await buildUserResponse(user, rolesData, req.user.site);
+    res.json({ user: { ...userResp, forcePasswordChange: user.force_password_change } });
   } catch (err) {
     console.error("Auth me error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -248,36 +198,16 @@ router.put("/profile", authenticate, async (req, res) => {
     const result = await pool.query(
       `SELECT u.id, u.username, u.name, u.email, u.phone, u.emp_id,
               u.allowed_sites, u.force_password_change,
-              u.avatar_url, u.privacy_accepted_at,
-              r.name AS role_name, r.label AS role_label,
-              r.landing_path, r.allowed_paths
-       FROM users u
-       JOIN roles r ON r.id = u.role_id
-       WHERE u.id = $1`,
+              u.avatar_url, u.privacy_accepted_at
+       FROM users u WHERE u.id = $1`,
       [req.user.id]
     );
 
     const user = result.rows[0];
+    const rolesData = await getUserRoles(user.id);
+    const userResp = await buildUserResponse(user, rolesData, req.user.site);
 
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        empId: user.emp_id,
-        allowedSites: user.allowed_sites,
-        site: req.user.site,
-        role: user.role_name,
-        roleLabel: user.role_label,
-        landingPath: user.landing_path,
-        allowedPaths: user.allowed_paths,
-        avatarUrl: user.avatar_url,
-        privacyAcceptedAt: user.privacy_accepted_at,
-        forcePasswordChange: user.force_password_change,
-      },
-    });
+    res.json({ user: { ...userResp, forcePasswordChange: user.force_password_change } });
   } catch (err) {
     console.error("Profile update error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -310,7 +240,8 @@ router.put("/select-site", authenticate, async (req, res) => {
       return res.status(403).json({ error: "You do not have access to this site" });
     }
 
-    const token = createToken({ id: req.user.id, username: req.user.username, role_name: req.user.role, site });
+    const userRoles = req.user.roles || [req.user.role];
+    const token = createToken({ id: req.user.id, username: req.user.username, roles: userRoles, role_name: userRoles[0], site });
     logEvent("info", `User "${req.user.username}" selected site "${site}"`, req);
     res.json({ token, site });
   } catch (err) {
@@ -329,7 +260,7 @@ router.put("/change-password", authenticate, async (req, res) => {
 
   try {
     const result = await pool.query(
-      "SELECT u.id, u.password_hash, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1",
+      "SELECT id, password_hash FROM users WHERE id = $1",
       [req.user.id]
     );
     const user = result.rows[0];
@@ -365,7 +296,7 @@ router.put("/change-password", authenticate, async (req, res) => {
     );
 
     // Generate fresh token
-    const token = createToken({ ...req.user, ...user });
+    const token = createToken({ ...req.user, ...user, id: user.id, username: req.user.username, roles: req.user.roles || [req.user.role], site: req.user.site });
 
     logEvent("info", `User "${req.user.username}" changed their password`, req);
 

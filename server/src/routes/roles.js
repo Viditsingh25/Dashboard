@@ -109,7 +109,10 @@ router.delete("/:id", authenticate, authorize("superadmin"), async (req, res) =>
   const { id } = req.params;
 
   try {
-    const usersCount = await pool.query("SELECT COUNT(*) FROM users WHERE role_id = $1 AND deleted_at IS NULL", [id]);
+    const usersCount = await pool.query(
+      "SELECT COUNT(*) FROM user_roles WHERE role_id = $1",
+      [id]
+    );
     if (parseInt(usersCount.rows[0].count) > 0) {
       return res.status(400).json({ error: "Assign users to another role before deleting this role" });
     }

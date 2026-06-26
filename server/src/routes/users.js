@@ -13,13 +13,25 @@ router.get("/", authenticate, authorize("superadmin", "admin"), async (req, res)
     const result = await pool.query(
       `SELECT u.id, u.username, u.name, u.email, u.phone, u.emp_id,
               u.allowed_sites, u.active, u.created_at, u.force_password_change,
-              r.name AS role, r.label AS role_label
+              COALESCE(
+                jsonb_agg(
+                  jsonb_build_object('name', r.name, 'label', r.label)
+                ) FILTER (WHERE r.id IS NOT NULL),
+                '[]'::jsonb
+              ) AS roles
        FROM users u
-       JOIN roles r ON r.id = u.role_id
+       LEFT JOIN user_roles ur ON ur.user_id = u.id
+       LEFT JOIN roles r ON r.id = ur.role_id AND r.deleted_at IS NULL
        WHERE u.deleted_at IS NULL
+       GROUP BY u.id
        ORDER BY u.created_at DESC`
     );
-    res.json({ users: result.rows });
+    const users = result.rows.map(u => ({
+      ...u,
+      role: u.roles?.[0]?.name || "",
+      role_label: u.roles?.[0]?.label || "",
+    }));
+    res.json({ users });
   } catch (err) {
     console.error("Get users error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -28,10 +40,10 @@ router.get("/", authenticate, authorize("superadmin", "admin"), async (req, res)
 
 // POST /api/users
 router.post("/", authenticate, authorize("superadmin", "admin"), async (req, res) => {
-  const { username, password, name, email, phone, empId, role, allowedSites } = req.body;
+  const { username, password, name, email, phone, empId, roles, allowedSites } = req.body;
 
-  if (!username || !password || !name || !role) {
-    return res.status(400).json({ error: "Username, password, name, and role are required" });
+  if (!username || !password || !name || !roles || roles.length === 0) {
+    return res.status(400).json({ error: "Username, password, name, and at least one role are required" });
   }
 
   try {
@@ -41,21 +53,24 @@ router.post("/", authenticate, authorize("superadmin", "admin"), async (req, res
       return res.status(400).json({ error: validationErrors.join(". ") });
     }
 
-    const existing = await pool.query("SELECT id FROM users WHERE username = $1", [username.trim()]);
+    const existing = await pool.query("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [username.trim()]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: "Username already exists" });
     }
 
-    const roleResult = await pool.query("SELECT id FROM roles WHERE name = $1", [role]);
-    if (roleResult.rows.length === 0) {
-      return res.status(400).json({ error: "Invalid role" });
+    const roleResults = await pool.query(
+      "SELECT id, name FROM roles WHERE name = ANY($1) AND deleted_at IS NULL",
+      [roles]
+    );
+    if (roleResults.rows.length !== roles.length) {
+      return res.status(400).json({ error: "One or more roles are invalid" });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO users (username, password_hash, name, email, phone, emp_id, role_id, allowed_sites, password_changed_at, force_password_change)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), true)
+      `INSERT INTO users (username, password_hash, name, email, phone, emp_id, allowed_sites, password_changed_at, force_password_change)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), true)
        RETURNING id, username, name, email, phone, emp_id, allowed_sites, active, created_at, force_password_change`,
       [
         username.trim(),
@@ -64,14 +79,22 @@ router.post("/", authenticate, authorize("superadmin", "admin"), async (req, res
         email || "",
         phone || "",
         empId || "",
-        roleResult.rows[0].id,
         JSON.stringify(allowedSites || ["PBMH"]),
       ]
     );
 
-    // Don't store history for brand-new users — they haven't changed password yet
-    logEvent("info", `User "${req.user.username}" created user "${result.rows[0].username}"`, req);
-    res.status(201).json({ user: result.rows[0] });
+    const newUser = result.rows[0];
+
+    // Insert user_roles
+    for (const r of roleResults.rows) {
+      await pool.query(
+        "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        [newUser.id, r.id]
+      );
+    }
+
+    logEvent("info", `User "${req.user.username}" created user "${newUser.username}"`, req);
+    res.status(201).json({ user: { ...newUser, roles: roleResults.rows.map(r => r.name) } });
   } catch (err) {
     console.error("Create user error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -81,29 +104,44 @@ router.post("/", authenticate, authorize("superadmin", "admin"), async (req, res
 // PUT /api/users/:id
 router.put("/:id", authenticate, authorize("superadmin", "admin"), async (req, res) => {
   const { id } = req.params;
-  const { name, email, phone, empId, role, allowedSites, active } = req.body;
+  const { name, email, phone, empId, roles, allowedSites, active } = req.body;
 
   try {
-    const existing = await pool.query(
-      `SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
-      [id]
-    );
+    const existing = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
     const user = existing.rows[0];
-    if (user.role_name === "superadmin" && req.user.role !== "superadmin") {
+
+    // Check if target user is superadmin via user_roles
+    const isSuperResult = await pool.query(
+      `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 AND r.name = 'superadmin'`,
+      [id]
+    );
+    const isSuper = isSuperResult.rows.length > 0;
+    const reqUserRoles = req.user.roles || [req.user.role];
+    if (isSuper && !reqUserRoles.includes("superadmin")) {
       return res.status(403).json({ error: "Cannot modify superadmin" });
     }
 
-    let roleId = user.role_id;
-    if (role) {
-      const roleResult = await pool.query("SELECT id FROM roles WHERE name = $1", [role]);
-      if (roleResult.rows.length === 0) {
-        return res.status(400).json({ error: "Invalid role" });
+    if (roles && roles.length > 0) {
+      const roleResults = await pool.query(
+        "SELECT id, name FROM roles WHERE name = ANY($1) AND deleted_at IS NULL",
+        [roles]
+      );
+      if (roleResults.rows.length !== roles.length) {
+        return res.status(400).json({ error: "One or more roles are invalid" });
       }
-      roleId = roleResult.rows[0].id;
+
+      // Replace all role assignments
+      await pool.query("DELETE FROM user_roles WHERE user_id = $1", [id]);
+      for (const r of roleResults.rows) {
+        await pool.query(
+          "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [id, r.id]
+        );
+      }
     }
 
     const result = await pool.query(
@@ -112,26 +150,37 @@ router.put("/:id", authenticate, authorize("superadmin", "admin"), async (req, r
         email = COALESCE($2, email),
         phone = COALESCE($3, phone),
         emp_id = COALESCE($4, emp_id),
-        role_id = $5,
-        allowed_sites = $6,
-        active = COALESCE($7, active),
+        allowed_sites = $5,
+        active = COALESCE($6, active),
         updated_at = NOW()
-       WHERE id = $8
+       WHERE id = $7
        RETURNING id, username, name, email, phone, emp_id, allowed_sites, active`,
       [
         name || null,
         email !== undefined ? email : null,
         phone !== undefined ? phone : null,
         empId !== undefined ? empId : null,
-        roleId,
         JSON.stringify(allowedSites || user.allowed_sites),
         active !== undefined ? active : null,
         id,
       ]
     );
 
+    // Fetch updated roles
+    const roleResult = await pool.query(
+      `SELECT r.name, r.label FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 AND r.deleted_at IS NULL`,
+      [id]
+    );
+
     logEvent("info", `User "${req.user.username}" updated user "${result.rows[0].username}"`, req);
-    res.json({ user: result.rows[0] });
+    res.json({
+      user: {
+        ...result.rows[0],
+        roles: roleResult.rows,
+        role: roleResult.rows[0]?.name || "",
+        role_label: roleResult.rows[0]?.label || "",
+      },
+    });
   } catch (err) {
     console.error("Update user error:", err);
     res.status(500).json({ error: "Internal server error" });
@@ -148,10 +197,7 @@ router.put("/:id/reset-password", authenticate, authorize("superadmin", "admin")
   }
 
   try {
-    const existing = await pool.query(
-      `SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
-      [id]
-    );
+    const existing = await pool.query("SELECT * FROM users WHERE id = $1", [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -194,16 +240,17 @@ router.delete("/:id", authenticate, authorize("superadmin", "admin"), async (req
   const { id } = req.params;
 
   try {
-    const existing = await pool.query(
-      `SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1 AND u.deleted_at IS NULL`,
-      [id]
-    );
+    const existing = await pool.query("SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL", [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
     const user = existing.rows[0];
-    if (user.role_name === "superadmin") {
+    const isSuperResult = await pool.query(
+      `SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 AND r.name = 'superadmin'`,
+      [id]
+    );
+    if (isSuperResult.rows.length > 0) {
       return res.status(403).json({ error: "Cannot delete superadmin" });
     }
 

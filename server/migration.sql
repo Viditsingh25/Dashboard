@@ -106,3 +106,18 @@ CREATE TABLE IF NOT EXISTS system_logs (
 
 CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level);
+
+-- ============================================================
+-- MULTI-ROLE & CASE-INSENSITIVE USERNAME
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- Migrate existing single-role users to the new table
+INSERT INTO user_roles (user_id, role_id)
+SELECT id, role_id FROM users WHERE role_id IS NOT NULL
+ON CONFLICT DO NOTHING;

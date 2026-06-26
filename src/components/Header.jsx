@@ -130,7 +130,7 @@ export default function Header({ currentUser, onLogout, roles }) {
         <div>
           <h1 className="text-xl font-bold text-green-800">{pageTitle}</h1>
           <p className="text-xs font-medium text-gray-500">
-            {roles[currentUser?.role]?.label || currentUser?.role} | {currentUser?.site}
+            {(currentUser?.roles || [currentUser?.role]).map(r => roles[r]?.label || r).join(", ")} | {currentUser?.site}
           </p>
         </div>
       </div>
