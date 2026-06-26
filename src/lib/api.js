@@ -31,13 +31,19 @@ async function request(method, path, body) {
 }
 
 // Auth
-export async function login(username, password, site) {
-  const data = await request("POST", "/auth/login", { username, password, site });
+export async function login(username, password) {
+  const data = await request("POST", "/auth/login", { username, password });
   if (data.token) setToken(data.token);
   if (data.passwordExpired) {
     return { ...data.user, _passwordExpired: true, _expiredMessage: data.message };
   }
   return data.user;
+}
+
+export async function selectSite(site) {
+  const data = await request("PUT", "/auth/select-site", { site });
+  if (data.token) setToken(data.token);
+  return data;
 }
 
 export async function fetchMe() {

@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { Building2, Eye, EyeOff, Lock, ShieldCheck, User, KeyRound } from "lucide-react";
+import { Eye, EyeOff, Lock, ShieldCheck, User, KeyRound } from "lucide-react";
 import kimsLogo from "../assets/kims-login-logo.png";
 import founderCard from "../assets/login-founder-card.png";
 
-import { sites } from "../utils/authConfig";
 import { login, changePassword } from "../lib/api";
 
 export default function Login({ onLogin }) {
-  const [site, setSite] = useState(sites[0]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -22,7 +20,7 @@ export default function Login({ onLogin }) {
     setError("");
 
     try {
-      const user = await login(username.trim(), password, site);
+      const user = await login(username.trim(), password);
       if (user._passwordExpired) {
         setExpiredUser(user);
         return;
@@ -46,7 +44,7 @@ export default function Login({ onLogin }) {
     }
     try {
       await changePassword(password, newPassword);
-      const updatedUser = await login(username.trim(), newPassword, site);
+      const updatedUser = await login(username.trim(), newPassword);
       onLogin(updatedUser);
     } catch (err) {
       setError(err.message);
@@ -155,20 +153,6 @@ export default function Login({ onLogin }) {
               </div>
 
               <div className="space-y-5">
-                <label className="block">
-                  <span className="mb-2 flex items-center gap-2 text-sm font-medium text-gray-800">
-                    <Building2 className="text-green-700" size={18} strokeWidth={1.5} /> Site
-                  </span>
-                  <select
-                    value={site}
-                    onChange={(event) => setSite(event.target.value)}
-                    className="h-13 w-full rounded-xl border border-green-200 bg-white px-8 text-sm text-gray-900 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
-                  >
-                    {sites.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </select>
-                </label>
 
                 <label className="relative block">
                   <User className="absolute left-4 top-1/2 z-10 -translate-y-1/2 text-green-700" size={21} strokeWidth={1.5} />

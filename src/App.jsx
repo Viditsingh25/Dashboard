@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import { Building2, LogOut } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
@@ -26,7 +27,7 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import DynamicModulePage from "./pages/DynamicModulePage";
 import { canAccessPath, getLandingPath } from "./utils/authConfig";
-import { fetchMe, fetchUsers, fetchRoles, fetchModules, logout as apiLogout, acceptPrivacy } from "./lib/api";
+import { fetchMe, fetchUsers, fetchRoles, fetchModules, logout as apiLogout, acceptPrivacy, selectSite } from "./lib/api";
 import MaintenancePage from "./pages/MaintenancePage";
 import TabGuard from "./components/TabGuard";
 
@@ -37,6 +38,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [modules, setModules] = useState([]);
+  const [pendingSiteSelection, setPendingSiteSelection] = useState(null);
 
   const loadUsers = useCallback(async () => {
     try {
@@ -91,7 +93,39 @@ function App() {
     init();
   }, [loadUsers, loadRoles, loadModules]);
 
-  const handleLogin = (user) => {
+  const handleLogin = async (user) => {
+    localStorage.setItem("kims-dashboard-user", JSON.stringify(user));
+    const allowedSites = user.allowedSites || [];
+    if (allowedSites.length <= 1) {
+      const site = allowedSites[0] || "";
+      const updatedUser = { ...user, site };
+      try { await selectSite(site); } catch {}
+      const landingPath = updatedUser.landingPath || "/";
+      window.history.replaceState(null, "", landingPath);
+      setCurrentUser(updatedUser);
+      setRoles((prev) => ({
+        ...prev,
+        [user.role]: {
+          label: user.roleLabel,
+          landingPath: user.landingPath,
+          allowedPaths: user.allowedPaths,
+          active: true,
+        },
+      }));
+      loadUsers();
+      loadRoles();
+      loadModules();
+    } else {
+      setPendingSiteSelection(user);
+    }
+  };
+
+  const handleSiteSelect = async (site) => {
+    if (!pendingSiteSelection) return;
+    try {
+      await selectSite(site);
+    } catch {}
+    const user = { ...pendingSiteSelection, site };
     localStorage.setItem("kims-dashboard-user", JSON.stringify(user));
     const landingPath = user.landingPath || "/";
     window.history.replaceState(null, "", landingPath);
@@ -105,6 +139,7 @@ function App() {
         active: true,
       },
     }));
+    setPendingSiteSelection(null);
     loadUsers();
     loadRoles();
     loadModules();
@@ -164,13 +199,17 @@ function App() {
     );
   }
 
-  if (!currentUser) {
+  if (!currentUser && !pendingSiteSelection) {
     return (
       <>
         <Login onLogin={handleLogin} />
         <ToastContainer />
       </>
     );
+  }
+
+  if (pendingSiteSelection) {
+    return <SiteSelectModal user={pendingSiteSelection} onSelect={handleSiteSelect} onCancel={() => { setPendingSiteSelection(null); apiLogout(); }} />;
   }
 
   const moduleStatusMap = Object.fromEntries(
@@ -241,6 +280,49 @@ function App() {
         />
       )}
     </BrowserRouter>
+  );
+}
+
+function SiteSelectModal({ user, onSelect, onCancel }) {
+  const [selectedSite, setSelectedSite] = useState((user.allowedSites || [])[0] || "");
+
+  return (
+    <main className="flex h-screen items-center justify-center bg-[#f7fbf8] p-5">
+      <div className="w-full max-w-md rounded-[22px] border border-green-100/80 bg-white/95 p-8 shadow-[0_34px_90px_-50px_rgba(15,23,42,0.42)] text-center">
+        <div className="mb-4 flex items-center justify-center gap-4 text-green-800">
+          <span className="h-px w-16 bg-green-700/45" />
+          <span className="grid h-12 w-12 place-items-center rounded-full border-2 border-green-700">
+            <Building2 size={24} strokeWidth={1.5} />
+          </span>
+          <span className="h-px w-16 bg-green-700/45" />
+        </div>
+        <h2 className="mb-2 text-xl font-bold text-gray-900">Select Site</h2>
+        <p className="mb-6 text-sm text-gray-500">
+          Welcome, <span className="font-semibold text-gray-800">{user.name || user.username}</span>. Choose a site to continue.
+        </p>
+        <select
+          value={selectedSite}
+          onChange={(e) => setSelectedSite(e.target.value)}
+          className="mb-6 h-12 w-full rounded-xl border border-green-200 px-4 text-sm text-gray-900 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+        >
+          {(user.allowedSites || []).map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => onSelect(selectedSite)}
+          className="mb-3 flex h-12 w-full items-center justify-center rounded-xl bg-green-800 text-base font-bold tracking-wide text-white shadow-lg shadow-green-900/15 transition hover:bg-green-900"
+        >
+          Continue
+        </button>
+        <button
+          onClick={onCancel}
+          className="flex w-full items-center justify-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+        >
+          <LogOut size={14} strokeWidth={1.5} /> Logout
+        </button>
+      </div>
+    </main>
   );
 }
 

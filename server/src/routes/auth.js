@@ -295,6 +295,30 @@ router.put("/privacy-accept", authenticate, async (req, res) => {
   }
 });
 
+// PUT /api/auth/select-site
+router.put("/select-site", authenticate, async (req, res) => {
+  const { site } = req.body;
+  if (!site) return res.status(400).json({ error: "Site is required" });
+
+  try {
+    const result = await pool.query(
+      "SELECT allowed_sites FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    const allowedSites = result.rows[0]?.allowed_sites || [];
+    if (!allowedSites.includes(site)) {
+      return res.status(403).json({ error: "You do not have access to this site" });
+    }
+
+    const token = createToken({ id: req.user.id, username: req.user.username, role_name: req.user.role, site });
+    logEvent("info", `User "${req.user.username}" selected site "${site}"`, req);
+    res.json({ token, site });
+  } catch (err) {
+    console.error("Select site error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // PUT /api/auth/change-password
 router.put("/change-password", authenticate, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
