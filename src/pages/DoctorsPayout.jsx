@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import * as XLSX from "xlsx";
 import DragDropGrid from "../components/DragDropGrid";
 
-export default function DoctorsPayout() {
+export default function DoctorsPayout({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -279,6 +280,8 @@ export default function DoctorsPayout() {
     XLSX.writeFile(workbook, "Doctor_Payout_Report.xlsx");
   };
 
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/doctors", tab, key, roles);
+
   const renderMetricCard = (item) => (
     <MetricCard title={item.title} value={item.value} icon={item.icon} />
   );
@@ -290,7 +293,7 @@ export default function DoctorsPayout() {
     { key: "pending", title: "Pending Payout", value: formatCurrency(summary.pendingPayout), icon: "⏳" },
     { key: "tds", title: "TDS Deducted", value: formatCurrency(summary.totalTDS), icon: "🧾" },
     { key: "doctors", title: "Active Doctors", value: summary.doctorCount, icon: "👨‍⚕️" },
-  ], [summary]);
+  ].filter((c) => filterKPI("overview", c.key)), [summary, currentUser, roles]);
 
   return (
     <div className="min-h-screen bg-green-50 p-6">
@@ -330,29 +333,33 @@ export default function DoctorsPayout() {
           <DragDropGrid items={overviewCards} renderItem={renderMetricCard} storageKey="kims-doctors-overview-order" className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" />
 
           <div className="mt-8 grid gap-6 xl:grid-cols-2">
-            <Panel title="🏆 Top Doctor Payout Ranking">
-              <SimpleTable
-                headers={["Doctor", "Department", "Net Payout"]}
-                rows={topDoctors.slice(0, 5).map((item) => [
-                  item.doctor,
-                  item.department,
-                  formatCurrency(item.netPayout),
-                ])}
-              />
-            </Panel>
+            {filterKPI("overview", "top-ranking") && (
+              <Panel title="🏆 Top Doctor Payout Ranking">
+                <SimpleTable
+                  headers={["Doctor", "Department", "Net Payout"]}
+                  rows={topDoctors.slice(0, 5).map((item) => [
+                    item.doctor,
+                    item.department,
+                    formatCurrency(item.netPayout),
+                  ])}
+                />
+              </Panel>
+            )}
 
-            <Panel title="🚨 Payout Alerts">
-              <div className="space-y-3">
-                <Alert text={`${formatCurrency(summary.pendingPayout)} payout is pending for approval.`} type="warning" />
-                <Alert text={`${summary.doctorCount} doctors are included in the current payout cycle.`} type="info" />
-                <Alert text="TDS and deductions are calculated separately for payout control." type="success" />
-              </div>
-            </Panel>
+            {filterKPI("overview", "payout-alerts") && (
+              <Panel title="🚨 Payout Alerts">
+                <div className="space-y-3">
+                  <Alert text={`${formatCurrency(summary.pendingPayout)} payout is pending for approval.`} type="warning" />
+                  <Alert text={`${summary.doctorCount} doctors are included in the current payout cycle.`} type="info" />
+                  <Alert text="TDS and deductions are calculated separately for payout control." type="success" />
+                </div>
+              </Panel>
+            )}
           </div>
         </>
       )}
 
-      {activeTab === "doctor" && (
+      {activeTab === "doctor" && filterKPI("doctor", "table") && (
         <Panel title="👨‍⚕️ Doctor-wise Payout Details">
           <SimpleTable
             headers={[
@@ -377,7 +384,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "department" && (
+      {activeTab === "department" && filterKPI("department", "table") && (
         <Panel title="🏥 Department-wise Doctor Payout">
           <SimpleTable
             headers={["Department", "Doctors", "Revenue", "Net Payout"]}
@@ -391,7 +398,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "service" && (
+      {activeTab === "service" && filterKPI("service", "table") && (
         <Panel title="🧪 Service-wise Revenue & Payout">
           <SimpleTable
             headers={["Service", "Doctors", "Revenue", "Payout"]}
@@ -405,7 +412,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "contribution" && (
+      {activeTab === "contribution" && filterKPI("contribution", "panel") && (
         <Panel title="📈 Doctor Revenue Contribution">
           <div className="space-y-5">
             {topDoctors.map((item) => {
@@ -438,7 +445,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "trend" && (
+      {activeTab === "trend" && filterKPI("trend", "panel") && (
         <Panel title="📅 Monthly Doctor Payout Trend">
           <div className="grid gap-5 md:grid-cols-5">
             <MetricCard title="January" value="₹10.2 L" icon="📅" />
@@ -450,7 +457,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "pending" && (
+      {activeTab === "pending" && filterKPI("pending", "table") && (
         <Panel title="⏳ Pending Doctor Payout">
           <SimpleTable
             headers={["Doctor", "Department", "Net Payout", "Status"]}
@@ -468,7 +475,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "tds" && (
+      {activeTab === "tds" && filterKPI("tds", "table") && (
         <Panel title="🧾 TDS & Deduction Details">
           <SimpleTable
             headers={[
@@ -489,7 +496,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "top" && (
+      {activeTab === "top" && filterKPI("top", "table") && (
         <Panel title="🏆 Top Doctors by Net Payout">
           <SimpleTable
             headers={["Rank", "Doctor", "Department", "Patients", "Net Payout"]}
@@ -504,7 +511,7 @@ export default function DoctorsPayout() {
         </Panel>
       )}
 
-      {activeTab === "upload" && (
+      {activeTab === "upload" && filterKPI("upload", "widget") && (
         <Panel title="📤 Upload Doctor Payout Excel">
           <div className="rounded-xl border-2 border-dashed border-green-300 bg-green-50 p-8">
             <p className="mb-4 text-lg font-semibold text-green-800">

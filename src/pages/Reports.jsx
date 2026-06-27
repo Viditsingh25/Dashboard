@@ -1,13 +1,15 @@
 import { useMemo } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import DragDropGrid from "../components/DragDropGrid";
 
-export default function Reports() {
+export default function Reports({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/reports", tab, key, roles);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -16,7 +18,7 @@ export default function Reports() {
     { key: "patient", title: "Patient Reports", value: "98", icon: "👨‍⚕️" },
     { key: "pharmacy", title: "Pharmacy Reports", value: "74", icon: "💊" },
     { key: "lab", title: "Lab Reports", value: "63", icon: "🧪" },
-  ], []);
+  ].filter((c) => filterKPI("overview", c.key)), [currentUser, roles]);
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -30,7 +32,7 @@ export default function Reports() {
       )}
 
       {/* REVENUE */}
-      {activeTab === "revenue" && (
+      {activeTab === "revenue" && filterKPI("revenue", "table") && (
         <ReportTable
           title="💰 Revenue Reports"
           data={[
@@ -43,7 +45,7 @@ export default function Reports() {
       )}
 
       {/* PATIENT */}
-      {activeTab === "patient" && (
+      {activeTab === "patient" && filterKPI("patient", "table") && (
         <ReportTable
           title="👨⚕️ Patient Reports"
           data={[
@@ -56,7 +58,7 @@ export default function Reports() {
       )}
 
       {/* PHARMACY */}
-      {activeTab === "pharmacy" && (
+      {activeTab === "pharmacy" && filterKPI("pharmacy", "table") && (
         <ReportTable
           title="💊 Pharmacy Reports"
           data={[
@@ -69,7 +71,7 @@ export default function Reports() {
       )}
 
       {/* LAB */}
-      {activeTab === "lab" && (
+      {activeTab === "lab" && filterKPI("lab", "table") && (
         <ReportTable
           title="🧪 Lab Reports"
           data={[
@@ -82,7 +84,7 @@ export default function Reports() {
       )}
 
       {/* BED */}
-      {activeTab === "bed" && (
+      {activeTab === "bed" && filterKPI("bed", "table") && (
         <ReportTable
           title="🛏️ Bed Reports"
           data={[
@@ -95,7 +97,7 @@ export default function Reports() {
       )}
 
       {/* DRILL DOWN */}
-      {activeTab === "drill" && (
+      {activeTab === "drill" && filterKPI("drill", "panel") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">📊 Drill Down Reports</h2>
           <ul className="space-y-4 text-gray-700">
@@ -108,7 +110,7 @@ export default function Reports() {
       )}
 
       {/* PDF */}
-      {activeTab === "pdf" && (
+      {activeTab === "pdf" && filterKPI("pdf", "export") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-4 text-gray-800">📄 Export PDF</h2>
           <button className="bg-red-600 text-white font-medium px-5 py-3 rounded-lg hover:bg-red-700 shadow-sm transition-colors">
@@ -118,7 +120,7 @@ export default function Reports() {
       )}
 
       {/* EXCEL */}
-      {activeTab === "excel" && (
+      {activeTab === "excel" && filterKPI("excel", "export") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-4 text-gray-800">📥 Export Excel</h2>
           <button className="bg-green-600 text-white font-medium px-5 py-3 rounded-lg hover:bg-green-700 shadow-sm transition-colors">
@@ -128,7 +130,7 @@ export default function Reports() {
       )}
 
       {/* SCHEDULE */}
-      {activeTab === "schedule" && (
+      {activeTab === "schedule" && filterKPI("schedule", "form") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">⏰ Schedule Reports</h2>
           <div className="space-y-4 max-w-md">

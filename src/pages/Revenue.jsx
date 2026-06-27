@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import RevenueTrendChart from '../charts/RevenueTrendChart';
 import RevenueDonutChart from '../charts/RevenueDonutChart';
 import UploadWidget from '../components/UploadWidget';
 import useModuleKPIs from "../hooks/useModuleKPIs";
 import DragDropGrid from "../components/DragDropGrid";
 
-export default function Revenue() {
+export default function Revenue({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
@@ -16,24 +17,26 @@ export default function Revenue() {
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/revenue", tab, key, roles);
+
   const mainCards = useMemo(() => [
     { key: "mtd", title: "MTD Revenue", value: getVal("mtd-revenue", "₹32.79 Cr"), icon: "📈" },
     { key: "yesterday", title: "Yesterday Revenue", value: getVal("yesterday-revenue", "₹97.86 L"), icon: "💵" },
     { key: "avg-daily", title: "Avg Daily Rev", value: getVal("avg-daily-revenue", "₹92.5 L"), icon: "📊" },
     { key: "projected", title: "Projected Revenue", value: getVal("projected-revenue", "₹35.2 Cr"), icon: "🎯" },
-  ], [getVal]);
+  ].filter((c) => filterKPI("overview", c.key)), [getVal, currentUser, roles]);
 
   const collectionCards = useMemo(() => [
     { key: "cash", title: "Cash Collection", value: getVal("cash-collection", "₹42 L"), icon: "💵" },
     { key: "card", title: "Card/UPI Collection", value: getVal("card-collection", "₹38 L"), icon: "💳" },
     { key: "tpa", title: "Pending TPA", value: getVal("pending-tpa", "₹17 L"), icon: "⏳" },
-  ], [getVal]);
+  ].filter((c) => filterKPI("collections", c.key)), [getVal, currentUser, roles]);
 
   const insuranceCards = useMemo(() => [
     { key: "submitted", title: "TPA Claims Submitted", value: getVal("tpa-claims-submitted", "₹2.4 Cr"), icon: "📤" },
     { key: "settled", title: "TPA Claims Settled", value: getVal("tpa-claims-settled", "₹1.8 Cr"), icon: "✅" },
     { key: "deductions", title: "TPA Deductions", value: getVal("tpa-deductions", "₹12 L"), icon: "✂️" },
-  ], [getVal]);
+  ].filter((c) => filterKPI("insurance", c.key)), [getVal, currentUser, roles]);
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -43,19 +46,25 @@ export default function Revenue() {
       {activeTab === defaultTab && (
         <div className="space-y-6">
           <DragDropGrid items={mainCards} renderItem={renderCard} storageKey="kims-revenue-main-order" className="grid md:grid-cols-4 gap-5" />
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-2">
-              <RevenueTrendChart />
+          {filterKPI("overview", "trend-chart") && filterKPI("overview", "donut-chart") && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {filterKPI("overview", "trend-chart") && (
+                <div className="col-span-2">
+                  <RevenueTrendChart />
+                </div>
+              )}
+              {filterKPI("overview", "donut-chart") && (
+                <div className="col-span-1">
+                  <RevenueDonutChart />
+                </div>
+              )}
             </div>
-            <div className="col-span-1">
-              <RevenueDonutChart />
-            </div>
-          </div>
+          )}
         </div>
       )}
 
       {/* DAILY REVENUE */}
-      {activeTab === "daily" && (
+      {activeTab === "daily" && filterKPI("daily", "breakdown") && (
         <ReportTable
           title="📅 Daily Revenue Breakdown"
           data={[
@@ -71,16 +80,18 @@ export default function Revenue() {
       {/* DEPARTMENT */}
       {activeTab === "department" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <RevenueDonutChart title="Department Revenue Share" />
-          <ReportTable
-            title="🏆 Top Departments"
-            data={[
-              ["Cardiology", "₹4.2 Cr"],
-              ["Neurology", "₹3.1 Cr"],
-              ["Orthopedics", "₹2.8 Cr"],
-              ["Oncology", "₹2.5 Cr"]
-            ]}
-          />
+          {filterKPI("department", "share-chart") && <RevenueDonutChart title="Department Revenue Share" />}
+          {filterKPI("department", "top-departments") && (
+            <ReportTable
+              title="🏆 Top Departments"
+              data={[
+                ["Cardiology", "₹4.2 Cr"],
+                ["Neurology", "₹3.1 Cr"],
+                ["Orthopedics", "₹2.8 Cr"],
+                ["Oncology", "₹2.5 Cr"]
+              ]}
+            />
+          )}
         </div>
       )}
 
@@ -90,7 +101,7 @@ export default function Revenue() {
       )}
 
       {/* DISCOUNTS */}
-      {activeTab === "discounts" && (
+      {activeTab === "discounts" && filterKPI("discounts", "table") && (
         <ReportTable
           title="✂️ Discounts Allowed"
           data={[
@@ -103,7 +114,7 @@ export default function Revenue() {
       )}
 
       {/* REFUNDS */}
-      {activeTab === "refunds" && (
+      {activeTab === "refunds" && filterKPI("refunds", "table") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">🔙 Refunds Processed</h2>
           <table className="w-full text-left text-gray-700">
@@ -124,17 +135,19 @@ export default function Revenue() {
       {/* UPLOAD */}
       {activeTab === "upload" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <UploadWidget title="Upload Revenue MIS (Excel/CSV)" onDataLoaded={handleDataLoaded} />
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-             <h3 className="text-lg font-bold text-gray-800 mb-4">Required Format</h3>
-             <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
-               <li>Date (DD-MM-YYYY)</li>
-               <li>Department Code</li>
-               <li>OPD_Revenue</li>
-               <li>IPD_Revenue</li>
-               <li>Discount_Amount</li>
-             </ul>
-          </div>
+          {filterKPI("upload", "widget") && <UploadWidget title="Upload Revenue MIS (Excel/CSV)" onDataLoaded={handleDataLoaded} />}
+          {filterKPI("upload", "format-info") && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+               <h3 className="text-lg font-bold text-gray-800 mb-4">Required Format</h3>
+               <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
+                 <li>Date (DD-MM-YYYY)</li>
+                 <li>Department Code</li>
+                 <li>OPD_Revenue</li>
+                 <li>IPD_Revenue</li>
+                 <li>Discount_Amount</li>
+               </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

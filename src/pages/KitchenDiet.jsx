@@ -1,10 +1,9 @@
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import UploadWidget from "../components/UploadWidget";
 import DragDropGrid from "../components/DragDropGrid";
 import useModuleKPIs from "../hooks/useModuleKPIs";
-
-
 
 const mealProduction = [
   ["Morning Tea", "1,196"],
@@ -28,12 +27,13 @@ const dietCategories = [
   ["Unclassified", "75"],
 ];
 
-export default function KitchenDiet() {
+export default function KitchenDiet({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
   const { getVal, handleDataLoaded } = useModuleKPIs("kitchen-diet");
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/kitchen-diet", tab, key, roles);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -44,7 +44,7 @@ export default function KitchenDiet() {
     { key: "diet-mod", title: "Diet Modification Count", value: getVal("diet-modification-count", "555"), icon: "DM" },
     { key: "special-diet", title: "Special Diet Count", value: getVal("special-diet-count", "93"), icon: "SD" },
     { key: "normal-diet", title: "Normal Diet Count", value: getVal("normal-diet-count", "175"), icon: "ND" },
-  ];
+  ].filter((c) => filterKPI("overview", c.key));
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -55,36 +55,38 @@ export default function KitchenDiet() {
           <DragDropGrid items={kpis} renderItem={renderCard} storageKey="kims-kitchen-main-order" className="grid md:grid-cols-3 xl:grid-cols-6 gap-5" />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ReportTable title="Meal Production Breakdown" data={mealProduction} />
-            <ReportTable title="Diet Category Breakdown" data={dietCategories} />
+            {filterKPI("overview", "meal-breakdown") && <ReportTable title="Meal Production Breakdown" data={mealProduction} />}
+            {filterKPI("overview", "diet-breakdown") && <ReportTable title="Diet Category Breakdown" data={dietCategories} />}
           </div>
         </div>
       )}
 
-      {activeTab === "production" && (
+      {activeTab === "production" && filterKPI("production", "table") && (
         <ReportTable title="Meal Production Breakdown" data={mealProduction} />
       )}
 
-      {activeTab === "diet" && (
+      {activeTab === "diet" && filterKPI("diet", "table") && (
         <ReportTable title="Diet Category Breakdown" data={dietCategories} />
       )}
 
       {activeTab === "upload" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <UploadWidget title="Upload Kitchen/Diet Excel Data" onDataLoaded={handleDataLoaded} />
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">KPI Source Files</h3>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
-              <li>Kitchen Report morning tea.xls</li>
-              <li>Kitchen Report breakfast.xls</li>
-              <li>Kitchen Report mid morning.xls</li>
-              <li>Kitchen Report lunch.xls</li>
-              <li>Kitchen Report evening test.xls</li>
-              <li>Kitchen Report evng tea.xls</li>
-              <li>Kitchen Report dinner.xls</li>
-              <li>Diet Prescription Report on dt.04-06-2026.xls</li>
-            </ul>
-          </div>
+          {filterKPI("upload", "widget") && <UploadWidget title="Upload Kitchen/Diet Excel Data" onDataLoaded={handleDataLoaded} />}
+          {filterKPI("upload", "kpi-sources") && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">KPI Source Files</h3>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
+                <li>Kitchen Report morning tea.xls</li>
+                <li>Kitchen Report breakfast.xls</li>
+                <li>Kitchen Report mid morning.xls</li>
+                <li>Kitchen Report lunch.xls</li>
+                <li>Kitchen Report evening test.xls</li>
+                <li>Kitchen Report evng tea.xls</li>
+                <li>Kitchen Report dinner.xls</li>
+                <li>Diet Prescription Report on dt.04-06-2026.xls</li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -90,7 +90,8 @@ export function canAccessPath(user, path, roles = defaultRoleConfig) {
     const permissions = role.allowedPaths || [];
     if (permissions.includes("*")) return true;
     if (permissions.includes(path)) return true;
-    if (permissions.some((p) => p.startsWith(path + "/tab/"))) return true;
+    const tabPrefix = path === "/" ? "/tab/" : path + "/tab/";
+    if (permissions.some((p) => p.startsWith(tabPrefix))) return true;
   }
   return false;
 }
@@ -104,12 +105,38 @@ export function canAccessTab(user, modulePath, tabKey, roles = defaultRoleConfig
     const permissions = role.allowedPaths || [];
     if (permissions.includes("*")) return true;
 
-    const tabPrefix = modulePath + "/tab/";
+    const tabPrefix = modulePath === "/" ? "/tab/" : modulePath + "/tab/";
     const hasExplicitTabPermissions = permissions.some((p) => p.startsWith(tabPrefix));
 
     if (hasExplicitTabPermissions) {
       if (permissions.includes(tabPrefix + tabKey)) return true;
+      if (permissions.some((p) => p.startsWith(tabPrefix + tabKey + "/"))) return true;
     } else if (permissions.includes(modulePath)) return true;
+  }
+  return false;
+}
+
+export function canAccessKPI(user, modulePath, tabKey, itemKey, roles = defaultRoleConfig) {
+  if (user?.active === false) return false;
+  const userRoles = user?.roles || [user?.role];
+  for (const roleName of userRoles) {
+    const role = roles[roleName];
+    if (!role || role.active === false) continue;
+    const permissions = role.allowedPaths || [];
+    if (permissions.includes("*")) return true;
+
+    const tabPrefix = modulePath === "/" ? "/tab/" : modulePath + "/tab/";
+    const itemPrefix = tabPrefix + tabKey + "/";
+    const hasExplicitItemPermissions = permissions.some((p) => p.startsWith(itemPrefix));
+
+    if (hasExplicitItemPermissions) {
+      if (permissions.includes(itemPrefix + itemKey)) return true;
+    } else {
+      const hasExplicitTabPermissions = permissions.some((p) => p.startsWith(tabPrefix));
+      if (hasExplicitTabPermissions) {
+        if (permissions.includes(tabPrefix + tabKey)) return true;
+      } else if (permissions.includes(modulePath)) return true;
+    }
   }
   return false;
 }

@@ -84,6 +84,23 @@ function App() {
       const user = await fetchMe();
       if (user) {
         setCurrentUser(user);
+        const userRoles = user.roles || [user.role];
+        if (userRoles.length > 0 && user.allowedPaths) {
+          setRoles((prev) => {
+            const next = { ...prev };
+            for (const rn of userRoles) {
+              if (!next[rn]) {
+                next[rn] = {
+                  label: rn,
+                  landingPath: user.landingPath || "/",
+                  allowedPaths: user.allowedPaths,
+                  active: true,
+                };
+              }
+            }
+            return next;
+          });
+        }
         loadUsers();
         loadRoles();
         loadModules();
@@ -244,17 +261,17 @@ function App() {
           <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 app-content">
             <RouteTransition>
               <Routes>
-                <Route path="/" element={renderRoute("/", <Dashboard currentUser={currentUser} />)} />
-                <Route path="/revenue" element={renderModuleRoute("/revenue", <Revenue />)} />
-                <Route path="/patients" element={renderModuleRoute("/patients", <Patients />)} />
-                <Route path="/beds" element={renderModuleRoute("/beds", <BedManagement />)} />
-                <Route path="/lab" element={renderModuleRoute("/lab", <LabRadiology />)} />
-                <Route path="/pharmacy" element={renderModuleRoute("/pharmacy", <Pharmacy />)} />
-                <Route path="/kitchen-diet" element={renderModuleRoute("/kitchen-diet", <KitchenDiet />)} />
-                <Route path="/operations" element={renderModuleRoute("/operations", <Operations />)} />
-                <Route path="/doctors" element={renderModuleRoute("/doctors", <DoctorsPayout />)} />
-                <Route path="/nursing" element={renderModuleRoute("/nursing", <NursingPage />)} />
-                <Route path="/reports" element={renderModuleRoute("/reports", <Reports />)} />
+                <Route path="/" element={renderRoute("/", <Dashboard currentUser={currentUser} roles={roles} />)} />
+                <Route path="/revenue" element={renderModuleRoute("/revenue", <Revenue currentUser={currentUser} roles={roles} />)} />
+                <Route path="/patients" element={renderModuleRoute("/patients", <Patients currentUser={currentUser} roles={roles} />)} />
+                <Route path="/beds" element={renderModuleRoute("/beds", <BedManagement currentUser={currentUser} roles={roles} />)} />
+                <Route path="/lab" element={renderModuleRoute("/lab", <LabRadiology currentUser={currentUser} roles={roles} />)} />
+                <Route path="/pharmacy" element={renderModuleRoute("/pharmacy", <Pharmacy currentUser={currentUser} roles={roles} />)} />
+                <Route path="/kitchen-diet" element={renderModuleRoute("/kitchen-diet", <KitchenDiet currentUser={currentUser} roles={roles} />)} />
+                <Route path="/operations" element={renderModuleRoute("/operations", <Operations currentUser={currentUser} roles={roles} />)} />
+                <Route path="/doctors" element={renderModuleRoute("/doctors", <DoctorsPayout currentUser={currentUser} roles={roles} />)} />
+                <Route path="/nursing" element={renderModuleRoute("/nursing", <NursingPage currentUser={currentUser} roles={roles} />)} />
+                <Route path="/reports" element={renderModuleRoute("/reports", <Reports currentUser={currentUser} roles={roles} />)} />
                 <Route
                   path="/settings"
                   element={renderRoute(

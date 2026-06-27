@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { canAccessKPI } from "../utils/authConfig";
 import {
   Area,
   AreaChart,
@@ -100,7 +101,7 @@ function exportChart(elementId, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function Dashboard({ currentUser }) {
+export default function Dashboard({ currentUser, roles }) {
   const [selectedMetric, setSelectedMetric] = useState("revenue");
   const metric = metricConfig[selectedMetric];
 
@@ -110,13 +111,15 @@ export default function Dashboard({ currentUser }) {
     [currentSite]
   );
 
+  const filterKPI = (key) => canAccessKPI(currentUser, "/", "overview", key, roles);
+
   const kpiItems = useMemo(() => [
-    { title: "MTD Revenue", value: `Rs ${currentSiteData.revenue} Cr`, subtitle: "Executive financial view", trend: "+15%", icon: IndianRupee, colorClass: "text-emerald-600", bgClass: "bg-emerald-100", iconSize: 24 },
-    { title: "Total Visits", value: currentSiteData.patients.toLocaleString("en-IN"), subtitle: "OP and IP combined", trend: "+8%", icon: Users, colorClass: "text-blue-600", bgClass: "bg-blue-100", iconSize: 24 },
-    { title: "Bed Occupancy", value: "84%", subtitle: "Current utilization", trend: "+4%", icon: BedDouble, colorClass: "text-violet-600", bgClass: "bg-violet-100", iconSize: 24 },
-    { title: "Pharmacy Collection", value: "Rs 18.11 L", subtitle: "Yesterday collection", trend: "-2.1%", icon: ShoppingCart, colorClass: "text-amber-600", bgClass: "bg-amber-100", iconSize: 24 },
-    { title: "Meal Production", value: currentSiteData.diet.toLocaleString("en-IN"), subtitle: "Kitchen and diet KPI", trend: "+5.5%", icon: Wheat, colorClass: "text-rose-600", bgClass: "bg-rose-100", iconSize: 24 },
-  ], [currentSiteData]);
+    { key: "mtd-revenue", title: "MTD Revenue", value: `Rs ${currentSiteData.revenue} Cr`, subtitle: "Executive financial view", trend: "+15%", icon: IndianRupee, colorClass: "text-emerald-600", bgClass: "bg-emerald-100", iconSize: 24 },
+    { key: "total-visits", title: "Total Visits", value: currentSiteData.patients.toLocaleString("en-IN"), subtitle: "OP and IP combined", trend: "+8%", icon: Users, colorClass: "text-blue-600", bgClass: "bg-blue-100", iconSize: 24 },
+    { key: "bed-occupancy", title: "Bed Occupancy", value: "84%", subtitle: "Current utilization", trend: "+4%", icon: BedDouble, colorClass: "text-violet-600", bgClass: "bg-violet-100", iconSize: 24 },
+    { key: "pharmacy-collection", title: "Pharmacy Collection", value: "Rs 18.11 L", subtitle: "Yesterday collection", trend: "-2.1%", icon: ShoppingCart, colorClass: "text-amber-600", bgClass: "bg-amber-100", iconSize: 24 },
+    { key: "meal-production", title: "Meal Production", value: currentSiteData.diet.toLocaleString("en-IN"), subtitle: "Kitchen and diet KPI", trend: "+5.5%", icon: Wheat, colorClass: "text-rose-600", bgClass: "bg-rose-100", iconSize: 24 },
+  ].filter((c) => filterKPI(c.key)), [currentSiteData, currentUser, roles]);
 
   return (
     <div className="space-y-6 fade-in" id="dashboard-content">
@@ -126,7 +129,7 @@ export default function Dashboard({ currentUser }) {
           <h2 className="text-2xl font-bold text-gray-800">Executive Analytical Dashboard</h2>
         </div>
         <div className="flex flex-wrap gap-3">
-          {Object.entries(metricConfig).map(([key, item]) => (
+          {filterKPI("metric-toggle") && Object.entries(metricConfig).map(([key, item]) => (
             <button
               key={key}
               type="button"
@@ -140,12 +143,14 @@ export default function Dashboard({ currentUser }) {
               {item.label}
             </button>
           ))}
-          <button
-            onClick={() => exportToPDF("dashboard-content")}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition-colors hover:bg-gray-50"
-          >
-            <DownloadCloud size={16} /> Export PDF
-          </button>
+          {filterKPI("export-pdf") && (
+            <button
+              onClick={() => exportToPDF("dashboard-content")}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              <DownloadCloud size={16} /> Export PDF
+            </button>
+          )}
         </div>
       </div>
 
@@ -153,188 +158,202 @@ export default function Dashboard({ currentUser }) {
         <DraggableKPIGrid items={kpiItems} storageKey="kims-dashboard-kpi-order" />
       </div>
 
-      <div data-tour="charts" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <ChartPanel
-          id="chart-trend"
-          title={`${metric.label} Trend`}
-          subtitle={metric.insight}
-          className="xl:col-span-2"
-          onExport={() => exportChart("chart-trend", `${metric.label}-trend`)}
-        >
-          <ResponsiveContainer width="100%" height={340}>
-            <AreaChart data={monthlyTrend} margin={{ top: 16, right: 24, left: 0, bottom: 4 }}>
-              <defs>
-                <linearGradient id={`grad-${metric.dataKey}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={metric.color} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={metric.color} stopOpacity={0.04} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#6b7280" }} tickLine={false} axisLine={false} />
-              <YAxis
-                tick={{ fontSize: 12, fill: "#6b7280" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v) => (metric.dataKey === "patients" ? formatNum(v) : `${v}${metric.suffix}`)}
-              />
-              <Tooltip content={<CustomTooltip formatter={(v) => `${v}${metric.suffix}`} labelFormatter={(l) => `${l} 2025`} />} />
-              <Area
-                type="monotone"
-                dataKey={metric.dataKey}
-                stroke={metric.color}
-                strokeWidth={2.5}
-                fill={`url(#grad-${metric.dataKey})`}
-                animationDuration={1200}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartPanel>
+      { (filterKPI("metric-trend-chart") || filterKPI("department-contribution-chart")) && (
+        <div data-tour="charts" className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          {filterKPI("metric-trend-chart") && (
+            <ChartPanel
+              id="chart-trend"
+              title={`${metric.label} Trend`}
+              subtitle={metric.insight}
+              className="xl:col-span-2"
+              onExport={() => exportChart("chart-trend", `${metric.label}-trend`)}
+            >
+              <ResponsiveContainer width="100%" height={340}>
+                <AreaChart data={monthlyTrend} margin={{ top: 16, right: 24, left: 0, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id={`grad-${metric.dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={metric.color} stopOpacity={0.35} />
+                      <stop offset="100%" stopColor={metric.color} stopOpacity={0.04} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#6b7280" }} tickLine={false} axisLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 12, fill: "#6b7280" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => (metric.dataKey === "patients" ? formatNum(v) : `${v}${metric.suffix}`)}
+                  />
+                  <Tooltip content={<CustomTooltip formatter={(v) => `${v}${metric.suffix}`} labelFormatter={(l) => `${l} 2025`} />} />
+                  <Area
+                    type="monotone"
+                    dataKey={metric.dataKey}
+                    stroke={metric.color}
+                    strokeWidth={2.5}
+                    fill={`url(#grad-${metric.dataKey})`}
+                    animationDuration={1200}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
 
-        <ChartPanel
-          id="chart-department"
-          title="Department Contribution"
-          subtitle="Revenue share by department (Cr)"
-          onExport={() => exportChart("chart-department", "department-contribution")}
-        >
-          <ResponsiveContainer width="100%" height={340}>
-            <PieChart>
-              <Pie
-                data={departmentMix}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={78}
-                outerRadius={110}
-                paddingAngle={3}
-                cornerRadius={4}
-                animationDuration={1000}
-              >
-                {departmentMix.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} stroke="transparent" />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip formatter={(v) => `${v} Cr`} />} />
-              <Legend
-                verticalAlign="bottom"
-                iconType="circle"
-                iconSize={10}
-                formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-      </div>
+          {filterKPI("department-contribution-chart") && (
+            <ChartPanel
+              id="chart-department"
+              title="Department Contribution"
+              subtitle="Revenue share by department (Cr)"
+              onExport={() => exportChart("chart-department", "department-contribution")}
+            >
+              <ResponsiveContainer width="100%" height={340}>
+                <PieChart>
+                  <Pie
+                    data={departmentMix}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={78}
+                    outerRadius={110}
+                    paddingAngle={3}
+                    cornerRadius={4}
+                    animationDuration={1000}
+                  >
+                    {departmentMix.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} stroke="transparent" />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip formatter={(v) => `${v} Cr`} />} />
+                  <Legend
+                    verticalAlign="bottom"
+                    iconType="circle"
+                    iconSize={10}
+                    formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <ChartPanel
-          id="chart-site"
-          title="Site Wise Performance"
-          subtitle="Revenue vs Patient volume comparison"
-          onExport={() => exportChart("chart-site", "site-performance")}
-        >
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={sitePerformance} margin={{ top: 20, right: 24, left: 0, bottom: 4 }} barGap={12}>
-              <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="site" tick={{ fontSize: 13, fill: "#374151", fontWeight: 600 }} tickLine={false} axisLine={false} />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12, fill: "#6b7280" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(v) => `${v} Cr`}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fontSize: 12, fill: "#6b7280" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={formatNum}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                iconType="rect"
-                iconSize={12}
-                formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
-              />
-              <Bar yAxisId="left" dataKey="revenue" name="Revenue (Cr)" fill="#047857" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                <LabelList dataKey="revenue" position="top" formatter={(v) => `${v} Cr`} style={{ fontSize: 11, fill: "#047857", fontWeight: 600 }} />
-              </Bar>
-              <Bar yAxisId="right" dataKey="patients" name="Patients" fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={48}>
-                <LabelList dataKey="patients" position="top" formatter={formatNum} style={{ fontSize: 11, fill: "#2563eb", fontWeight: 600 }} />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartPanel>
+      { (filterKPI("site-performance-chart") || filterKPI("patient-flow-chart")) && (
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          {filterKPI("site-performance-chart") && (
+            <ChartPanel
+              id="chart-site"
+              title="Site Wise Performance"
+              subtitle="Revenue vs Patient volume comparison"
+              onExport={() => exportChart("chart-site", "site-performance")}
+            >
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={sitePerformance} margin={{ top: 20, right: 24, left: 0, bottom: 4 }} barGap={12}>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="site" tick={{ fontSize: 13, fill: "#374151", fontWeight: 600 }} tickLine={false} axisLine={false} />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 12, fill: "#6b7280" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `${v} Cr`}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 12, fill: "#6b7280" }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatNum}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    iconType="rect"
+                    iconSize={12}
+                    formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
+                  />
+                  <Bar yAxisId="left" dataKey="revenue" name="Revenue (Cr)" fill="#047857" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                    <LabelList dataKey="revenue" position="top" formatter={(v) => `${v} Cr`} style={{ fontSize: 11, fill: "#047857", fontWeight: 600 }} />
+                  </Bar>
+                  <Bar yAxisId="right" dataKey="patients" name="Patients" fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                    <LabelList dataKey="patients" position="top" formatter={formatNum} style={{ fontSize: 11, fill: "#2563eb", fontWeight: 600 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
 
-        <ChartPanel
-          id="chart-flow"
-          title="Patient Flow & Occupancy"
-          subtitle="Weekly OPD, IPD, and occupancy trend"
-          onExport={() => exportChart("chart-flow", "patient-flow")}
-        >
-          <ResponsiveContainer width="100%" height={340}>
-            <ComposedChart data={serviceFlow} margin={{ top: 20, right: 24, left: 0, bottom: 4 }}>
-              <defs>
-                <linearGradient id="occupancyLine" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.6} />
-                  <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#6b7280" }} tickLine={false} axisLine={false} />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12, fill: "#6b7280" }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fontSize: 12, fill: "#6b7280" }}
-                tickLine={false}
-                axisLine={false}
-                domain={[70, 90]}
-                tickFormatter={(v) => `${v}%`}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                iconType="rect"
-                iconSize={12}
-                formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
-              />
-              <Bar yAxisId="left" dataKey="opd" name="OPD" fill="#38bdf8" radius={[4, 4, 0, 0]} maxBarSize={24} />
-              <Bar yAxisId="left" dataKey="ipd" name="IPD" fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={24} />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="occupancy"
-                name="Occupancy %"
-                stroke="url(#occupancyLine)"
-                strokeWidth={3}
-                dot={{ r: 5, fill: "#7c3aed", strokeWidth: 2, stroke: "#fff" }}
-                activeDot={{ r: 7, fill: "#7c3aed", strokeWidth: 2, stroke: "#fff" }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </ChartPanel>
-      </div>
+          {filterKPI("patient-flow-chart") && (
+            <ChartPanel
+              id="chart-flow"
+              title="Patient Flow & Occupancy"
+              subtitle="Weekly OPD, IPD, and occupancy trend"
+              onExport={() => exportChart("chart-flow", "patient-flow")}
+            >
+              <ResponsiveContainer width="100%" height={340}>
+                <ComposedChart data={serviceFlow} margin={{ top: 20, right: 24, left: 0, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="occupancyLine" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 12, fill: "#6b7280" }} tickLine={false} axisLine={false} />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 12, fill: "#6b7280" }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 12, fill: "#6b7280" }}
+                    tickLine={false}
+                    axisLine={false}
+                    domain={[70, 90]}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend
+                    iconType="rect"
+                    iconSize={12}
+                    formatter={(value) => <span className="text-sm text-gray-600">{value}</span>}
+                  />
+                  <Bar yAxisId="left" dataKey="opd" name="OPD" fill="#38bdf8" radius={[4, 4, 0, 0]} maxBarSize={24} />
+                  <Bar yAxisId="left" dataKey="ipd" name="IPD" fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={24} />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="occupancy"
+                    name="Occupancy %"
+                    stroke="url(#occupancyLine)"
+                    strokeWidth={3}
+                    dot={{ r: 5, fill: "#7c3aed", strokeWidth: 2, stroke: "#fff" }}
+                    activeDot={{ r: 7, fill: "#7c3aed", strokeWidth: 2, stroke: "#fff" }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </ChartPanel>
+          )}
+        </div>
+      )}
 
-      <div className="grid gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm md:grid-cols-4">
-        {[
-          { icon: TrendingUp, title: "Revenue Alert", detail: "Cardiology and pharmacy are driving 54% of value." },
-          { icon: Users, title: "Patient Load", detail: "OPD peaks mid-week; staff scheduling should favor Wed-Thu." },
-          { icon: BedDouble, title: "Bed Watch", detail: "Occupancy above 80% needs discharge planning review." },
-          { icon: Wheat, title: "Diet Ops", detail: "Kitchen volume is stable across seven meal slots." },
-        ].map(({ icon: Icon, title, detail }) => (
-          <div key={title} className="rounded-lg border border-green-100 bg-gradient-to-br from-green-50 to-white p-4 transition-shadow hover:shadow-md">
-            <div className="mb-2 flex items-center gap-2 text-sm font-bold text-green-800">
-              <Icon size={16} /> {title}
+      {filterKPI("alert-cards") && (
+        <div className="grid gap-4 rounded-xl border border-gray-100 bg-white p-5 shadow-sm md:grid-cols-4">
+          {[
+            { icon: TrendingUp, title: "Revenue Alert", detail: "Cardiology and pharmacy are driving 54% of value." },
+            { icon: Users, title: "Patient Load", detail: "OPD peaks mid-week; staff scheduling should favor Wed-Thu." },
+            { icon: BedDouble, title: "Bed Watch", detail: "Occupancy above 80% needs discharge planning review." },
+            { icon: Wheat, title: "Diet Ops", detail: "Kitchen volume is stable across seven meal slots." },
+          ].map(({ icon: Icon, title, detail }) => (
+            <div key={title} className="rounded-lg border border-green-100 bg-gradient-to-br from-green-50 to-white p-4 transition-shadow hover:shadow-md">
+              <div className="mb-2 flex items-center gap-2 text-sm font-bold text-green-800">
+                <Icon size={16} /> {title}
+              </div>
+              <p className="text-sm leading-6 text-gray-600">{detail}</p>
             </div>
-            <p className="text-sm leading-6 text-gray-600">{detail}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

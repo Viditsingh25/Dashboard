@@ -1,5 +1,6 @@
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import DiagnosticsChart from '../charts/DiagnosticsChart';
 import UploadWidget from '../components/UploadWidget';
 import DragDropGrid from "../components/DragDropGrid";
@@ -9,12 +10,13 @@ import useModuleKPIs from "../hooks/useModuleKPIs";
 
 
 
-export default function LabRadiology() {
+export default function LabRadiology({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
   const { getVal, handleDataLoaded } = useModuleKPIs("lab");
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/lab", tab, key, roles);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -23,13 +25,13 @@ export default function LabRadiology() {
     { key: "scans", title: "Scans Today", value: getVal("total-scans", "342"), icon: "🏥" },
     { key: "tat", title: "Average TAT", value: getVal("average-tat", "3.5 Hrs"), icon: "⏱️" },
     { key: "revenue", title: "Diagnostics Rev.", value: getVal("diagnostics-revenue", "₹12.5 L"), icon: "💰" },
-  ];
+  ].filter((c) => filterKPI("overview", c.key));
 
   const labRadiologyCards = [
     { key: "xray", title: "X-Ray", value: getVal("xray-scans", "180 Scans"), icon: "🦴" },
     { key: "usg", title: "Ultrasound (USG)", value: getVal("usg-scans", "95 Scans"), icon: "👶" },
     { key: "mri", title: "MRI / CT Scan", value: getVal("mri-ct-scans", "67 Scans"), icon: "🧠" },
-  ];
+  ].filter((c) => filterKPI("radiology", c.key));
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -39,22 +41,26 @@ export default function LabRadiology() {
       {activeTab === defaultTab && (
         <div className="space-y-6">
           <DragDropGrid items={labMainCards} renderItem={renderCard} storageKey="kims-lab-main-order" className="grid md:grid-cols-4 gap-5" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <DiagnosticsChart />
-            <ReportTable
-              title="⚠️ Alerts & Outliers"
-              data={[
-                ["Critical Values Reported", "14 Cases"],
-                ["Pending > 24Hrs", "5 Routine Tests"],
-                ["Machine Calibration", "MRI Scanner due at 5 PM"]
-              ]}
-            />
-          </div>
+          { (filterKPI("overview", "volumes-chart") || filterKPI("overview", "alerts")) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {filterKPI("overview", "volumes-chart") && <DiagnosticsChart />}
+              {filterKPI("overview", "alerts") && (
+                <ReportTable
+                  title="⚠️ Alerts & Outliers"
+                  data={[
+                    ["Critical Values Reported", "14 Cases"],
+                    ["Pending > 24Hrs", "5 Routine Tests"],
+                    ["Machine Calibration", "MRI Scanner due at 5 PM"]
+                  ]}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* PATHOLOGY */}
-      {activeTab === "pathology" && (
+      {activeTab === "pathology" && filterKPI("pathology", "table") && (
         <ReportTable
           title="🔬 Pathology Sub-Departments"
           data={[
@@ -72,7 +78,7 @@ export default function LabRadiology() {
       )}
 
       {/* TAT */}
-      {activeTab === "tat" && (
+      {activeTab === "tat" && filterKPI("tat", "table") && (
         <ReportTable
           title="⏱️ Turnaround Time Analytics"
           data={[
@@ -85,7 +91,7 @@ export default function LabRadiology() {
       )}
 
       {/* PENDING */}
-      {activeTab === "pending" && (
+      {activeTab === "pending" && filterKPI("pending", "table") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">⏳ Pending Reports Queue</h2>
           <table className="w-full text-left text-gray-700">
@@ -99,7 +105,7 @@ export default function LabRadiology() {
       )}
 
       {/* UPLOAD */}
-      {activeTab === "upload" && (
+      {activeTab === "upload" && filterKPI("upload", "widget") && (
         <div className="grid lg:grid-cols-2 gap-6">
           <UploadWidget title="Upload LIS/PACS Data" onDataLoaded={handleDataLoaded} />
         </div>

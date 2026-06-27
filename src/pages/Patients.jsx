@@ -1,6 +1,7 @@
 import { useSearchParams, useLocation } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import PatientChart from '../charts/PatientChart';
 import UploadWidget from '../components/UploadWidget';
 import DragDropGrid from "../components/DragDropGrid";
@@ -65,12 +66,13 @@ function DemographicsCard({ title, data, total }) {
 
 
 
-export default function Patients() {
+export default function Patients({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
   const { getVal, handleDataLoaded } = useModuleKPIs("patients");
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/patients", tab, key, roles);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -79,13 +81,13 @@ export default function Patients() {
     { key: "opd", title: "OPD Visits", value: getVal("opd-visits", "5,589"), icon: "🚶" },
     { key: "ipd", title: "IPD Admissions", value: getVal("ipd-admissions", "1,245"), icon: "🛏️" },
     { key: "emergency", title: "Emergency Cases", value: getVal("emergency-cases", "284"), icon: "🚑" },
-  ];
+  ].filter((c) => filterKPI("overview", c.key));
 
   const patientRetentionCards = [
     { key: "new", title: "New Patients", value: getVal("new-patients", "45%"), icon: "🆕" },
     { key: "repeat", title: "Repeat Patients", value: getVal("repeat-patients", "55%"), icon: "🔄" },
     { key: "satisfaction", title: "Patient Satisfaction", value: getVal("patient-satisfaction", "4.6/5"), icon: "⭐" },
-  ];
+  ].filter((c) => filterKPI("retention", c.key));
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -96,22 +98,24 @@ export default function Patients() {
         <div className="space-y-6">
           <DragDropGrid items={patientMainCards} renderItem={renderCard} storageKey="kims-patients-main-order" className="grid md:grid-cols-4 gap-5" />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <PatientChart />
-            <ReportTable
-              title="🏆 Top Specialties by Footfall"
-              data={[
-                ["General Medicine", "3,420"],
-                ["Pediatrics", "2,150"],
-                ["Orthopedics", "1,840"],
-                ["Cardiology", "1,200"]
-              ]}
-            />
+            {filterKPI("overview", "distribution-chart") && <PatientChart />}
+            {filterKPI("overview", "top-specialties") && (
+              <ReportTable
+                title="🏆 Top Specialties by Footfall"
+                data={[
+                  ["General Medicine", "3,420"],
+                  ["Pediatrics", "2,150"],
+                  ["Orthopedics", "1,840"],
+                  ["Cardiology", "1,200"]
+                ]}
+              />
+            )}
           </div>
         </div>
       )}
 
       {/* OPD */}
-      {activeTab === "opd" && (
+      {activeTab === "opd" && filterKPI("opd", "table") && (
         <ReportTable
           title="🚶 OP Patient Analytics"
           data={[
@@ -124,7 +128,7 @@ export default function Patients() {
       )}
 
       {/* IPD */}
-      {activeTab === "ipd" && (
+      {activeTab === "ipd" && filterKPI("ipd", "table") && (
         <ReportTable
           title="🛏️ IP Patient Analytics"
           data={[
@@ -144,21 +148,25 @@ export default function Patients() {
       {/* DEMOGRAPHICS */}
       {activeTab === "demographics" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <DemographicsCard
-            title="👤 By Gender"
-            data={genderData}
-            total={genderData.reduce((s, d) => s + d.count, 0)}
-          />
-          <DemographicsCard
-            title="📊 By Age Group"
-            data={ageData}
-            total={ageData.reduce((s, d) => s + d.count, 0)}
-          />
+          {filterKPI("demographics", "gender-chart") && (
+            <DemographicsCard
+              title="👤 By Gender"
+              data={genderData}
+              total={genderData.reduce((s, d) => s + d.count, 0)}
+            />
+          )}
+          {filterKPI("demographics", "age-chart") && (
+            <DemographicsCard
+              title="📊 By Age Group"
+              data={ageData}
+              total={ageData.reduce((s, d) => s + d.count, 0)}
+            />
+          )}
         </div>
       )}
 
       {/* DOCTOR LOAD */}
-      {activeTab === "doctor" && (
+      {activeTab === "doctor" && filterKPI("doctor", "table") && (
         <ReportTable
           title="👨⚕️ Top Doctor Consulting Load"
           data={[
@@ -171,7 +179,7 @@ export default function Patients() {
       )}
 
       {/* UPLOAD */}
-      {activeTab === "upload" && (
+      {activeTab === "upload" && filterKPI("upload", "widget") && (
         <div className="grid lg:grid-cols-2 gap-6">
           <UploadWidget title="Upload Patient Registration Data" onDataLoaded={handleDataLoaded} />
         </div>

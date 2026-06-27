@@ -1,5 +1,6 @@
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import PharmacyChart from '../charts/PharmacyChart';
 import UploadWidget from '../components/UploadWidget';
 import DragDropGrid from "../components/DragDropGrid";
@@ -9,12 +10,13 @@ import useModuleKPIs from "../hooks/useModuleKPIs";
 
 
 
-export default function Pharmacy() {
+export default function Pharmacy({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
   const { getVal, handleDataLoaded } = useModuleKPIs("pharmacy");
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/pharmacy", tab, key, roles);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -23,13 +25,13 @@ export default function Pharmacy() {
     { key: "bills", title: "Total Bills", value: getVal("total-bills", "842"), icon: "🧾" },
     { key: "avg-bill", title: "Avg Bill Value", value: getVal("avg-bill-value", "₹2,150"), icon: "📊" },
     { key: "ipd-indents", title: "IPD Indents", value: getVal("ipd-indents", "145"), icon: "🏥" },
-  ];
+  ].filter((c) => filterKPI("overview", c.key));
 
   const pharmacyExpiryCards = [
     { key: "30d", title: "Expiring in 30 Days", value: getVal("expiring-30d", "12 Batches"), icon: "⚠️" },
     { key: "90d", title: "Expiring in 90 Days", value: getVal("expiring-90d", "45 Batches"), icon: "📅" },
     { key: "risk", title: "Value at Risk", value: getVal("value-at-risk", "₹1.2 L"), icon: "📉" },
-  ];
+  ].filter((c) => filterKPI("expiry", c.key));
 
   return (
     <div className="fade-in bg-green-50 p-6">
@@ -39,22 +41,26 @@ export default function Pharmacy() {
       {activeTab === defaultTab && (
         <div className="space-y-6">
           <DragDropGrid items={pharmacyMainCards} renderItem={renderCard} storageKey="kims-pharmacy-main-order" className="grid md:grid-cols-4 gap-5" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <PharmacyChart />
-            <ReportTable
-              title="⚠️ Stock Alerts"
-              data={[
-                ["Paracetamol 500mg", "Low Stock (Reorder Level Reached)"],
-                ["Insulin Syringes", "Out of Stock (Emergency Restock)"],
-                ["Near Expiry Items", "12 Batches expiring this month"]
-              ]}
-            />
-          </div>
+          { (filterKPI("overview", "trend-chart") || filterKPI("overview", "stock-alerts")) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {filterKPI("overview", "trend-chart") && <PharmacyChart />}
+              {filterKPI("overview", "stock-alerts") && (
+                <ReportTable
+                  title="⚠️ Stock Alerts"
+                  data={[
+                    ["Paracetamol 500mg", "Low Stock (Reorder Level Reached)"],
+                    ["Insulin Syringes", "Out of Stock (Emergency Restock)"],
+                    ["Near Expiry Items", "12 Batches expiring this month"]
+                  ]}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* SALES */}
-      {activeTab === "sales" && (
+      {activeTab === "sales" && filterKPI("sales", "table") && (
         <ReportTable
           title="📈 Daily Sales Breakdown"
           data={[
@@ -67,7 +73,7 @@ export default function Pharmacy() {
       )}
 
       {/* INVENTORY */}
-      {activeTab === "inventory" && (
+      {activeTab === "inventory" && filterKPI("inventory", "table") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">📦 Inventory Status</h2>
           <table className="w-full text-left text-gray-700">
@@ -93,7 +99,7 @@ export default function Pharmacy() {
       )}
 
       {/* REFUNDS */}
-      {activeTab === "refunds" && (
+      {activeTab === "refunds" && filterKPI("refunds", "table") && (
         <ReportTable
           title="🔙 Pharmacy Returns & Refunds"
           data={[
@@ -106,7 +112,7 @@ export default function Pharmacy() {
       )}
 
       {/* UPLOAD */}
-      {activeTab === "upload" && (
+      {activeTab === "upload" && filterKPI("upload", "widget") && (
         <div className="grid lg:grid-cols-2 gap-6">
           <UploadWidget title="Upload Pharmacy Collections/Stock Data" onDataLoaded={handleDataLoaded} />
         </div>

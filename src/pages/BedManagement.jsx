@@ -1,30 +1,32 @@
 import { useMemo } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import OccupancyChart from '../charts/OccupancyChart';
 import UploadWidget from '../components/UploadWidget';
 import DragDropGrid from "../components/DragDropGrid";
 import useModuleKPIs from "../hooks/useModuleKPIs";
 
-export default function BedManagement() {
+export default function BedManagement({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
   const { getVal, handleDataLoaded } = useModuleKPIs("beds");
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/beds", tab, key, roles);
 
   const bedMainCards = useMemo(() => [
     { key: "total", title: "Total Beds", value: getVal("total_beds", "850"), icon: "🛏️" },
     { key: "occupancy", title: "Overall Occupancy", value: getVal("overall_occupancy", "86%"), icon: "📊" },
     { key: "available", title: "Available Beds", value: getVal("available_beds", "119"), icon: "✅" },
     { key: "turnover", title: "Turnover Rate", value: getVal("turnover_rate", "2.4 Days"), icon: "🔄" },
-  ], [getVal]);
+  ].filter((c) => filterKPI("overview", c.key)), [getVal, currentUser, roles]);
 
   const bedWardCards = useMemo(() => [
     { key: "capacity", title: "Ward Capacity", value: getVal("ward_capacity", "500"), icon: "🏢" },
     { key: "ward-occ", title: "Ward Occupancy", value: getVal("ward_occupancy", "82%"), icon: "📉" },
     { key: "discharges", title: "Discharges Expected", value: getVal("discharges_expected", "45"), icon: "📤" },
-  ], [getVal]);
+  ].filter((c) => filterKPI("ward", c.key)), [getVal, currentUser, roles]);
 
   const renderCard = (item) => <Card title={item.title} value={item.value} icon={item.icon} />;
 
@@ -35,21 +37,25 @@ export default function BedManagement() {
       {activeTab === defaultTab && (
         <div className="space-y-6">
           <DragDropGrid items={bedMainCards} renderItem={renderCard} storageKey="kims-bed-main-order" className="grid md:grid-cols-4 gap-5" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <OccupancyChart />
-            <ReportTable
-              title="🔴 Critical Bed Alerts"
-              data={[
-                ["Medical ICU", "100% Full (0 Available)"],
-                ["Surgical ICU", "95% Full (1 Available)"],
-                ["NICU", "90% Full (2 Available)"]
-              ]}
-            />
-          </div>
+          { (filterKPI("overview", "occupancy-chart") || filterKPI("overview", "critical-alerts")) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {filterKPI("overview", "occupancy-chart") && <OccupancyChart />}
+              {filterKPI("overview", "critical-alerts") && (
+                <ReportTable
+                  title="🔴 Critical Bed Alerts"
+                  data={[
+                    ["Medical ICU", "100% Full (0 Available)"],
+                    ["Surgical ICU", "95% Full (1 Available)"],
+                    ["NICU", "90% Full (2 Available)"]
+                  ]}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {activeTab === "icu" && (
+      {activeTab === "icu" && filterKPI("icu", "table") && (
         <ReportTable
           title="🚨 ICU Status Breakdown"
           data={[
@@ -66,7 +72,7 @@ export default function BedManagement() {
         <DragDropGrid items={bedWardCards} renderItem={renderCard} storageKey="kims-bed-ward-order" className="grid md:grid-cols-3 gap-5" />
       )}
 
-      {activeTab === "deluxe" && (
+      {activeTab === "deluxe" && filterKPI("deluxe", "table") && (
         <ReportTable
           title="🏨 Private & Deluxe Rooms"
           data={[
@@ -78,7 +84,7 @@ export default function BedManagement() {
         />
       )}
 
-      {activeTab === "ventilator" && (
+      {activeTab === "ventilator" && filterKPI("ventilator", "status") && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-2xl font-bold mb-5 text-gray-800">🫁 Ventilator & Equipment Status</h2>
           <div className="grid grid-cols-2 gap-8 text-gray-700">
@@ -92,7 +98,7 @@ export default function BedManagement() {
         </div>
       )}
 
-      {activeTab === "availability" && (
+      {activeTab === "availability" && filterKPI("availability", "table") && (
         <ReportTable
           title="✅ Live Bed Availability"
           data={[
@@ -106,20 +112,22 @@ export default function BedManagement() {
 
       {activeTab === "upload" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <UploadWidget title="Upload Daily Census Report" onDataLoaded={handleDataLoaded} />
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Required Format</h3>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
-              <li>Date (DD-MM-YYYY)</li>
-              <li>Ward / Unit Name</li>
-              <li>Total_Beds</li>
-              <li>Occupied</li>
-              <li>ICU_Beds</li>
-              <li>ICU_Occupied</li>
-              <li>ALOS_Days</li>
-              <li>Active_Inpatients</li>
-            </ul>
-          </div>
+          {filterKPI("upload", "widget") && <UploadWidget title="Upload Daily Census Report" onDataLoaded={handleDataLoaded} />}
+          {filterKPI("upload", "format-info") && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">Required Format</h3>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
+                <li>Date (DD-MM-YYYY)</li>
+                <li>Ward / Unit Name</li>
+                <li>Total_Beds</li>
+                <li>Occupied</li>
+                <li>ICU_Beds</li>
+                <li>ICU_Occupied</li>
+                <li>ALOS_Days</li>
+                <li>Active_Inpatients</li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

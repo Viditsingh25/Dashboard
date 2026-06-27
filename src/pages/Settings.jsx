@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { ChevronDown, Download, RefreshCw, Eye, EyeOff, Save, Trash2, KeyRound, Bell, Shield, Building2, HardDrive, FileText, Info, Search } from "lucide-react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
-import { moduleAccess, sites } from "../utils/authConfig";
+import { moduleAccess, sites, canAccessKPI } from "../utils/authConfig";
 import { useToastStore } from "../stores/toastStore";
 
 import PrivacyPolicyModal from "../components/PrivacyPolicyModal";
@@ -58,6 +58,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
   const [userPage, setUserPage] = useState(1);
   const [expandedRoles, setExpandedRoles] = useState({});
   const ITEMS_PER_PAGE = 5;
+  const filterKPI = (tabKey, itemKey) => canAccessKPI(currentUser, "/settings", tabKey, itemKey, roles);
 
   useEffect(() => {
     (async () => {
@@ -207,7 +208,10 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     let allowedPaths;
     if (hasPath) {
       allowedPaths = roleForm.allowedPaths.filter((item) => item !== path);
-      if (isModulePath) allowedPaths = allowedPaths.filter((item) => !item.startsWith(path + "/tab/"));
+      if (isModulePath) {
+        const tabPrefix = path === "/" ? "/tab/" : path + "/tab/";
+        allowedPaths = allowedPaths.filter((item) => !item.startsWith(tabPrefix));
+      }
     } else {
       allowedPaths = [...roleForm.allowedPaths, path];
       if (isModulePath) {
@@ -234,7 +238,10 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     let allowedPaths;
     if (hasPath) {
       allowedPaths = currentPaths.filter((item) => item !== path);
-      if (isModulePath) allowedPaths = allowedPaths.filter((item) => !item.startsWith(path + "/tab/"));
+      if (isModulePath) {
+        const tabPrefix = path === "/" ? "/tab/" : path + "/tab/";
+        allowedPaths = allowedPaths.filter((item) => !item.startsWith(tabPrefix));
+      }
     } else {
       allowedPaths = [...currentPaths, path];
       if (isModulePath) {
@@ -419,7 +426,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
     <div className="fade-in bg-green-50 p-6">
       <h1 className="mb-6 text-4xl font-bold text-green-700">Settings & Administration</h1>
 
-      {activeTab === defaultTab && (
+      {activeTab === defaultTab && filterKPI("overview", "stats-cards") && (
         <div className="grid gap-5 md:grid-cols-4">
           <Card title="Users" value={String(users.length)} />
           <Card title="Roles" value={String(Object.keys(roles).length)} />
@@ -428,7 +435,7 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
         </div>
       )}
 
-      {activeTab === "modules" && <ModuleConfiguration onModulesChange={onModulesChange} />}
+      {activeTab === "modules" && filterKPI("modules", "configuration") && <ModuleConfiguration onModulesChange={onModulesChange} />}
       {activeTab === "users" && (
         <div className="space-y-6">
           {!canManageAccess && (
@@ -438,73 +445,79 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
           )}
 
           {canManageAccess && (
-            <div className="grid gap-6 xl:grid-cols-2">
-              <CollapsibleSection title="Create Role" isOpen={openSections.createRole} onToggle={() => toggleSection("createRole")}>
-                <form onSubmit={addRole}>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Input label="Role Code" value={roleForm.roleKey} onChange={(value) => setRoleForm({ ...roleForm, roleKey: value })} placeholder="finance-team" />
-                    <Input label="Role Name" value={roleForm.label} onChange={(value) => setRoleForm({ ...roleForm, label: value })} placeholder="Finance Team" />
-                  </div>
-                  <label className="mt-4 block">
-                    <span className="text-sm font-medium text-gray-600">Landing Page</span>
-                    <select
-                      value={roleForm.landingPath}
-                      onChange={(event) => setRoleForm({ ...roleForm, landingPath: event.target.value })}
-                      className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                    >
-                      {permissionTree.map((item) => <option key={item.path} value={item.path}>{item.label}</option>)}
-                    </select>
-                  </label>
-                  <ModuleTreeCheckboxes tree={permissionTree} selectedPaths={roleForm.allowedPaths} onToggle={toggleRoleFormPath} />
-                  <button className="mt-5 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
-                    Save Role
-                  </button>
-                </form>
-              </CollapsibleSection>
-
-              <CollapsibleSection title="Create User Login" isOpen={openSections.createUser} onToggle={() => toggleSection("createUser")}>
-                <PasswordReqHint />
-                <form onSubmit={addUser}>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Input label="Name" value={userForm.name} onChange={(value) => setUserForm({ ...userForm, name: value })} />
-                    <Input label="Email" value={userForm.email} onChange={(value) => setUserForm({ ...userForm, email: value })} />
-                    <Input label="Phone Number" value={userForm.phone} onChange={(value) => /^\d{0,10}$/.test(value) && setUserForm({ ...userForm, phone: value })} />
-                    <Input label="EMP ID" value={userForm.empId} onChange={(value) => setUserForm({ ...userForm, empId: value })} />
-                    <Input label="Username" value={userForm.username} onChange={(value) => setUserForm({ ...userForm, username: value })} />
-                    <Input label="Password" value={userForm.password} onChange={(value) => setUserForm({ ...userForm, password: value })} />
-                    <div className="block md:col-span-2">
-                      <span className="text-sm font-medium text-gray-600">Roles</span>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {editableRoleEntries.map(([roleKey, role]) => (
-                          <label key={roleKey} className="flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm cursor-pointer hover:bg-gray-100">
-                            <input
-                              type="checkbox"
-                              checked={userForm.roles.includes(roleKey)}
-                              onChange={() => {
-                                setUserForm((prev) => ({
-                                  ...prev,
-                                  roles: prev.roles.includes(roleKey)
-                                    ? prev.roles.filter(r => r !== roleKey)
-                                    : [...prev.roles, roleKey],
-                                }));
-                              }}
-                            />
-                            {role.label}
-                          </label>
-                        ))}
+            <>
+              <div className="grid gap-6 xl:grid-cols-2">
+                {filterKPI("users", "create-role") && (
+                  <CollapsibleSection title="Create Role" isOpen={openSections.createRole} onToggle={() => toggleSection("createRole")}>
+                    <form onSubmit={addRole}>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Input label="Role Code" value={roleForm.roleKey} onChange={(value) => setRoleForm({ ...roleForm, roleKey: value })} placeholder="finance-team" />
+                        <Input label="Role Name" value={roleForm.label} onChange={(value) => setRoleForm({ ...roleForm, label: value })} placeholder="Finance Team" />
                       </div>
-                    </div>
-                  </div>
-                  <SiteCheckboxes selectedSites={userForm.allowedSites} onToggle={toggleUserFormSite} />
-                  <button className="mt-5 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
-                    Save User
-                  </button>
-                  {message && <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">{message}</p>}
-                </form>
-              </CollapsibleSection>
-            </div>
+                      <label className="mt-4 block">
+                        <span className="text-sm font-medium text-gray-600">Landing Page</span>
+                        <select
+                          value={roleForm.landingPath}
+                          onChange={(event) => setRoleForm({ ...roleForm, landingPath: event.target.value })}
+                          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                        >
+                          {permissionTree.map((item) => <option key={item.path} value={item.path}>{item.label}</option>)}
+                        </select>
+                      </label>
+                      <ModuleTreeCheckboxes tree={permissionTree} selectedPaths={roleForm.allowedPaths} onToggle={toggleRoleFormPath} />
+                      <button className="mt-5 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
+                        Save Role
+                      </button>
+                    </form>
+                  </CollapsibleSection>
+                )}
+                {filterKPI("users", "create-user") && (
+                  <CollapsibleSection title="Create User Login" isOpen={openSections.createUser} onToggle={() => toggleSection("createUser")}>
+                    <PasswordReqHint />
+                    <form onSubmit={addUser}>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Input label="Name" value={userForm.name} onChange={(value) => setUserForm({ ...userForm, name: value })} />
+                        <Input label="Email" value={userForm.email} onChange={(value) => setUserForm({ ...userForm, email: value })} />
+                        <Input label="Phone Number" value={userForm.phone} onChange={(value) => /^\d{0,10}$/.test(value) && setUserForm({ ...userForm, phone: value })} />
+                        <Input label="EMP ID" value={userForm.empId} onChange={(value) => setUserForm({ ...userForm, empId: value })} />
+                        <Input label="Username" value={userForm.username} onChange={(value) => setUserForm({ ...userForm, username: value })} />
+                        <Input label="Password" value={userForm.password} onChange={(value) => setUserForm({ ...userForm, password: value })} />
+                        <div className="block md:col-span-2">
+                          <span className="text-sm font-medium text-gray-600">Roles</span>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {editableRoleEntries.map(([roleKey, role]) => (
+                              <label key={roleKey} className="flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm cursor-pointer hover:bg-gray-100">
+                                <input
+                                  type="checkbox"
+                                  checked={userForm.roles.includes(roleKey)}
+                                  onChange={() => {
+                                    setUserForm((prev) => ({
+                                      ...prev,
+                                      roles: prev.roles.includes(roleKey)
+                                        ? prev.roles.filter(r => r !== roleKey)
+                                        : [...prev.roles, roleKey],
+                                    }));
+                                  }}
+                                />
+                                {role.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <SiteCheckboxes selectedSites={userForm.allowedSites} onToggle={toggleUserFormSite} />
+                      <button className="mt-5 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-green-800">
+                        Save User
+                      </button>
+                    </form>
+                  </CollapsibleSection>
+                )}
+              </div>
+              {message && <p className="mt-4 rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">{message}</p>}
+            </>
           )}
 
+          {filterKPI("users", "role-access") && (
           <CollapsibleSection title="Role Access Design" isOpen={openSections.roleAccess} onToggle={() => toggleSection("roleAccess")}>
             <div className="mb-4">
               <div className="relative">
@@ -622,7 +635,9 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
               )}
             </div>
           </CollapsibleSection>
+          )}
 
+          {filterKPI("users", "user-config") && (
           <CollapsibleSection title="User Login Configuration" isOpen={openSections.userConfig} onToggle={() => toggleSection("userConfig")}>
             <div className="mb-4">
               <div className="relative">
@@ -836,16 +851,17 @@ export default function Settings({ currentUser, setCurrentUser, roles, setRoles,
               <Pagination page={userPage} total={filteredUsers.length} perPage={ITEMS_PER_PAGE} onChange={setUserPage} />
             </div>
           </CollapsibleSection>
+          )}
         </div>
       )}
 
-      {activeTab === "profile" && <ProfileSettings currentUser={currentUser} setCurrentUser={setCurrentUser} />}
-      {activeTab === "notifications" && <NotificationSettings />}
-      {activeTab === "branch" && <BranchSettings />}
-      {activeTab === "security" && <SecuritySettings />}
-      {activeTab === "backup" && <BackupSettings />}
-      {activeTab === "refresh" && <DataRefreshSettings />}
-      {activeTab === "logs" && <SystemLogs />}
+      {activeTab === "profile" && filterKPI("profile", "account-details") && <ProfileSettings currentUser={currentUser} setCurrentUser={setCurrentUser} />}
+      {activeTab === "notifications" && filterKPI("notifications", "preferences") && <NotificationSettings />}
+      {activeTab === "branch" && filterKPI("branch", "table") && <BranchSettings />}
+      {activeTab === "security" && (filterKPI("security", "password-policy") || filterKPI("security", "change-password")) && <SecuritySettings />}
+      {activeTab === "backup" && filterKPI("backup", "controls") && <BackupSettings />}
+      {activeTab === "refresh" && filterKPI("refresh", "settings") && <DataRefreshSettings />}
+      {activeTab === "logs" && filterKPI("logs", "viewer") && <SystemLogs />}
 
       <ConfirmDialog
         open={confirm.open}
@@ -926,22 +942,62 @@ function ModuleTreeCheckboxes({ tree, selectedPaths, onToggle, disabled = false 
             </div>
             {hasChildren && isExpanded && (
               <div className="ml-6 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-3">
-                {mod.children.map((child) => (
-                  <label key={child.key} className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
-                    selectedPaths?.includes(child.path)
-                      ? "border-green-200 bg-green-50/50 text-green-800"
-                      : "border-transparent text-gray-600 hover:bg-gray-50"
-                  } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}>
-                    <input
-                      type="checkbox"
-                      disabled={disabled}
-                      checked={selectedPaths?.includes(child.path)}
-                      onChange={() => onToggle(child.path)}
-                      className="h-3.5 w-3.5 shrink-0 accent-green-600"
-                    />
-                    <span>{child.label}</span>
-                  </label>
-                ))}
+                {mod.children.map((child) => {
+                  const childChecked = selectedPaths?.includes(child.path);
+                  const hasGrandchildren = child.children && child.children.length > 0;
+                  const isGrandExpanded = expanded[child.key] === true;
+                  const anyGrandchildChecked = hasGrandchildren && child.children.some((g) => selectedPaths?.includes(g.path));
+                  return (
+                    <div key={child.key}>
+                      <div className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+                        childChecked || anyGrandchildChecked
+                          ? "border-green-200 bg-green-50/50 text-green-800"
+                          : "border-transparent text-gray-600 hover:bg-gray-50"
+                      } ${disabled ? "opacity-50" : ""}`}>
+                        {hasGrandchildren ? (
+                          <button type="button" onClick={() => toggleExpand(child.key)} className="text-gray-400 hover:text-gray-600 p-0.5">
+                            <ChevronDown size={12} strokeWidth={1.5} className={`transition-transform ${isGrandExpanded ? "rotate-0" : "-rotate-90"}`} />
+                          </button>
+                        ) : (
+                          <span className="w-4" />
+                        )}
+                        <input
+                          type="checkbox"
+                          disabled={disabled}
+                          checked={childChecked}
+                          onChange={() => onToggle(child.path)}
+                          className="h-3.5 w-3.5 shrink-0 accent-green-600"
+                        />
+                        <span className="flex-1">{child.label}</span>
+                        {hasGrandchildren && (
+                          <span className="text-xs text-gray-400">
+                            {child.children.filter((g) => selectedPaths?.includes(g.path)).length}/{child.children.length}
+                          </span>
+                        )}
+                      </div>
+                      {hasGrandchildren && isGrandExpanded && (
+                        <div className="ml-5 mt-0.5 space-y-0.5 border-l-2 border-gray-100 pl-2">
+                          {child.children.map((grandchild) => (
+                            <label key={grandchild.key} className={`flex items-center gap-2 rounded-md border px-2 py-1 text-xs transition-colors cursor-pointer ${
+                              selectedPaths?.includes(grandchild.path)
+                                ? "border-green-200 bg-green-100/50 text-green-700"
+                                : "border-transparent text-gray-500 hover:bg-gray-50"
+                            } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}>
+                              <input
+                                type="checkbox"
+                                disabled={disabled}
+                                checked={selectedPaths?.includes(grandchild.path)}
+                                onChange={() => onToggle(grandchild.path)}
+                                className="h-3 w-3 shrink-0 accent-green-600"
+                              />
+                              <span>{grandchild.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

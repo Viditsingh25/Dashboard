@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { getActiveTabFromSearchOrFirst, getDefaultTabForPath } from "../utils/tabUtils";
+import { canAccessKPI } from "../utils/authConfig";
 import useModuleKPIs from "../hooks/useModuleKPIs";
 import DragDropGrid from "../components/DragDropGrid";
 import UploadWidget from "../components/UploadWidget";
@@ -20,11 +21,12 @@ function Card({ title, value, icon }) {
   );
 }
 
-export default function NursingPage() {
+export default function NursingPage({ currentUser, roles }) {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const defaultTab = getDefaultTabForPath(location.pathname);
   const activeTab = getActiveTabFromSearchOrFirst(searchParams, location.pathname);
+  const filterKPI = (tab, key) => canAccessKPI(currentUser, "/nursing", tab, key, roles);
 
   const { module, kpis, getVal, handleDataLoaded } = useModuleKPIs("nursing");
 
@@ -39,7 +41,7 @@ export default function NursingPage() {
   }, [kpis, getVal]);
 
   if (activeTab === "midnight-census") {
-    return <MidnightCensusForm />;
+    return filterKPI("midnight-census", "form") ? <MidnightCensusForm /> : null;
   }
 
   return (
@@ -48,35 +50,41 @@ export default function NursingPage() {
 
       {activeTab === defaultTab && (
         <div className="space-y-6">
-          {kpiCards.length > 0 ? (
-            <DragDropGrid
-              items={kpiCards}
-              renderItem={(item) => <Card title={item.title} value={item.value} icon={item.icon} />}
-              storageKey="kims-nursing-order"
-              className="grid md:grid-cols-4 gap-5"
-            />
-          ) : (
+          {filterKPI("overview", "kpi-grid") && (
+            kpiCards.length > 0 ? (
+              <DragDropGrid
+                items={kpiCards}
+                renderItem={(item) => <Card title={item.title} value={item.value} icon={item.icon} />}
+                storageKey="kims-nursing-order"
+                className="grid md:grid-cols-4 gap-5"
+              />
+            ) : (
+              <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white text-sm text-gray-400">
+                No KPIs configured yet. Add KPIs via Settings → Module Configuration.
+              </div>
+            )
+          )}
+          {filterKPI("overview", "placeholder") && (
             <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white text-sm text-gray-400">
-              No KPIs configured yet. Add KPIs via Settings → Module Configuration.
+              Configure this module's KPIs and upload data to see analytics here.
             </div>
           )}
-          <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-gray-200 bg-white text-sm text-gray-400">
-            Configure this module's KPIs and upload data to see analytics here.
-          </div>
         </div>
       )}
 
       {activeTab === "upload" && (
         <div className="grid lg:grid-cols-2 gap-6">
-          <UploadWidget title="Upload Nursing Data" onDataLoaded={handleDataLoaded} />
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">How it works</h3>
-            <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
-              <li>Add KPIs for this module in Settings → Module Configuration</li>
-              <li>Upload an Excel file with columns matching those KPIs' source_column names</li>
-              <li>Data is aggregated server-side and KPI values update automatically</li>
-            </ul>
-          </div>
+          {filterKPI("upload", "widget") && <UploadWidget title="Upload Nursing Data" onDataLoaded={handleDataLoaded} />}
+          {filterKPI("upload", "how-it-works") && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">How it works</h3>
+              <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600">
+                <li>Add KPIs for this module in Settings → Module Configuration</li>
+                <li>Upload an Excel file with columns matching those KPIs' source_column names</li>
+                <li>Data is aggregated server-side and KPI values update automatically</li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
