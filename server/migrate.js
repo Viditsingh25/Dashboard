@@ -4,13 +4,20 @@ import { dirname, resolve } from "path";
 import pool from "./src/db.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const sql = fs.readFileSync(resolve(__dirname, "migration.sql"), "utf8");
+
+async function runSqlFile(name) {
+  const sql = fs.readFileSync(resolve(__dirname, name), "utf8");
+  console.log(`Applying ${name} ...`);
+  await pool.query(sql);
+  console.log(`Applied ${name}.`);
+}
 
 try {
-  await pool.query(sql);
-  console.log("Migration applied successfully.");
+  await runSqlFile("schema.sql");
+  await runSqlFile("migration.sql");
+  console.log("Database setup complete.");
 } catch (err) {
-  console.error("Migration failed:", err.message);
+  console.error("Database setup failed:", err.message);
 } finally {
   await pool.end();
 }
