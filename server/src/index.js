@@ -33,6 +33,12 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+if (process.env.RUN_MIGRATIONS === "true") {
+  const { runMigrations } = await import("./setupDatabase.js");
+  await runMigrations();
+  console.log("Database migrations applied on startup.");
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
